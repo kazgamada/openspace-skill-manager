@@ -10,12 +10,18 @@ import {
   InsertUser,
   Skill,
   SkillVersion,
+  SkillSource,
+  InsertSkillSource,
+  UserSettings,
+  InsertUserSettings,
   communitySkills,
   executionLogs,
   healthThresholds,
+  skillSources,
   skillVersions,
   skills,
   users,
+  userSettings,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -179,10 +185,9 @@ export async function getCommunitySkills(opts?: {
   category?: string;
   limit?: number;
   offset?: number;
-}): Promise<CommunitySkill[]> {
+}): Promise<(CommunitySkill & { repoOwner?: string | null; repoName?: string | null })[]> {
   const db = await getDb();
   if (!db) return [];
-
   const conditions = [];
   if (opts?.search) {
     conditions.push(or(
@@ -193,14 +198,36 @@ export async function getCommunitySkills(opts?: {
   if (opts?.category && opts.category !== "all") {
     conditions.push(eq(communitySkills.category, opts.category));
   }
-
-  const query = db.select().from(communitySkills)
+  const rows = await db
+    .select({
+      id: communitySkills.id,
+      remoteId: communitySkills.remoteId,
+      name: communitySkills.name,
+      description: communitySkills.description,
+      author: communitySkills.author,
+      category: communitySkills.category,
+      tags: communitySkills.tags,
+      stars: communitySkills.stars,
+      downloads: communitySkills.downloads,
+      qualityScore: communitySkills.qualityScore,
+      latestVersion: communitySkills.latestVersion,
+      generationCount: communitySkills.generationCount,
+      codePreview: communitySkills.codePreview,
+      isInstalled: communitySkills.isInstalled,
+      sourceId: communitySkills.sourceId,
+      upstreamSha: communitySkills.upstreamSha,
+      lastSyncedAt: communitySkills.lastSyncedAt,
+      cachedAt: communitySkills.cachedAt,
+      repoOwner: skillSources.repoOwner,
+      repoName: skillSources.repoName,
+    })
+    .from(communitySkills)
+    .leftJoin(skillSources, eq(communitySkills.sourceId, skillSources.id))
     .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(desc(communitySkills.stars))
     .limit(opts?.limit ?? 20)
     .offset(opts?.offset ?? 0);
-
-  return query;
+  return rows;
 }
 
 export async function upsertCommunitySkill(data: InsertCommunitySkill): Promise<void> {
@@ -218,6 +245,12 @@ export async function upsertCommunitySkill(data: InsertCommunitySkill): Promise<
   });
 }
 
+export async function getCommunitySkillById(id: string): Promise<CommunitySkill | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db.select().from(communitySkills).where(eq(communitySkills.id, id)).limit(1);
+  return rows[0];
+}
 export async function markCommunitySkillInstalled(id: string): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
@@ -444,7 +477,7 @@ export async function findSkillByNameForUser(name: string, authorId: number): Pr
 // ─────────────────────────────────────────────
 // User Settings (preferences + integrations)
 // ─────────────────────────────────────────────
-import { userSettings, InsertUserSettings, UserSettings } from "../drizzle/schema";
+
 
 export async function getUserSettingsByUserId(userId: number): Promise<UserSettings | undefined> {
   const db = await getDb();
@@ -470,8 +503,6 @@ export async function upsertUserSettings(
 // ─────────────────────────────────────────────
 // Skill Sources (external repositories)
 // ─────────────────────────────────────────────
-import { skillSources, SkillSource, InsertSkillSource } from "../drizzle/schema";
-
 export async function getAllSkillSources(): Promise<SkillSource[]> {
   const db = await getDb();
   if (!db) return [];
@@ -510,4 +541,37 @@ export async function getCommunitySkillsBySource(sourceId: number): Promise<Comm
   const db = await getDb();
   if (!db) return [];
   return db.select().from(communitySkills).where(eq(communitySkills.sourceId, sourceId));
+}
+
+/** タイトル+更新日時が同一の重複コミュニティスキルを削除し、削除件数を返す */
+export async function removeDuplicateCommunitySkills(): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  // 重複: 同じname+updatedAtを持つ行のうち、idが最小のもの以外を削除
+  const allSkills = await db.select({
+    id: communitySkills.id,
+    name: communitySkills.name,
+    cachedAt: communitySkills.cachedAt,
+  }).from(communitySkills);
+
+  // グループ化して重複を特定
+  const seen = new Map<string, string>();
+  const toDelete: string[] = [];
+  for (const skill of allSkills) {
+    // cachedAtを同期日時の代用として使用
+    const key = `${skill.name}__${skill.cachedAt?.toISOString?.() ?? skill.cachedAt ?? ""}`;
+    if (seen.has(key)) {
+      toDelete.push(skill.id);
+    } else {
+      seen.set(key, skill.id);
+    }
+  }
+
+  if (toDelete.length === 0) return 0;
+
+  // バッチ削除
+  for (const id of toDelete) {
+    await db.delete(communitySkills).where(eq(communitySkills.id, id));
+  }
+  return toDelete.length;
 }

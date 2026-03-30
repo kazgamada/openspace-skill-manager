@@ -18,6 +18,7 @@ import {
   getVersionById,
   getVersionsBySkill,
   markCommunitySkillInstalled,
+  getCommunitySkillById,
   seedDemoData,
   updateSkill,
   updateUserRole,
@@ -35,9 +36,11 @@ import {
   updateSkillSource,
   deleteSkillSource,
   getCommunitySkillsBySource,
+  removeDuplicateCommunitySkills,
 } from "./db";
 import { syncSkillSource } from "./github-sync";
 import { invokeLLM } from "./_core/llm";
+import { broadcastEvolutionEvent } from "./_core/index";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { COOKIE_NAME } from "@shared/const";
@@ -86,9 +89,13 @@ const skillsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      // 重複チェック: 同名スキルが既に存在する場合はエラー
+      const existing = await findSkillByNameForUser(input.name, ctx.user.id);
+      if (existing) {
+        throw new TRPCError({ code: "CONFLICT", message: `「${input.name}」という名前のスキルは既に存在します` });
+      }
       const skillId = nanoid();
       const versionId = nanoid();
-
       await createSkill({
         id: skillId,
         name: input.name,
@@ -416,6 +423,15 @@ const communityRouter = router({
   install: protectedProcedure
     .input(z.object({ communitySkillId: z.string() }))
     .mutation(async ({ input, ctx }) => {
+      // 重複チェック: コミュニティスキルのname+updatedAtが既存のマイスキルと一致する場合はスキップ
+      const commSkill = await getCommunitySkillById(input.communitySkillId);
+      if (commSkill) {
+        const userSkills = await getSkillsByUser(ctx.user.id);
+        const isDuplicate = userSkills.some((s) => s.name === commSkill.name);
+        if (isDuplicate) {
+          throw new TRPCError({ code: "CONFLICT", message: `「${commSkill.name}」は既にマイスキルに存在します` });
+        }
+      }
       await markCommunitySkillInstalled(input.communitySkillId);
       return { success: true };
     }),
@@ -514,6 +530,11 @@ const communityRouter = router({
       await updateSkillSource(id, data);
       return { success: true };
     }),
+  /** タイトル+更新日時が同一の重複スキルを削除 */
+  removeDuplicates: protectedProcedure.mutation(async () => {
+    const removed = await removeDuplicateCommunitySkills();
+    return { success: true, removed };
+  }),
 });
 
 // ─────────────────────────────────────────────
@@ -641,6 +662,79 @@ const dashboardRouter = router({
     const logs = await getRecentLogs(20);
     return logs;
   }),
+
+  /** プロジェクト情報を分析し、最適スキルをプッシュ通知する */
+  monitorProject: protectedProcedure
+    .input(z.object({
+      projectPath: z.string().optional(),
+      language: z.string().optional(),
+      framework: z.string().optional(),
+      taskType: z.enum(["feature", "bugfix", "refactor", "review", "test", "general"]).default("general"),
+      recentFiles: z.array(z.string()).max(20).default([]),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      // BM25スコアリングで最適スキルを推薦
+      const candidates = await getSkillsByUser(ctx.user.id);
+      const keywords = [
+        input.language ?? "",
+        input.framework ?? "",
+        input.taskType,
+        ...input.recentFiles.map((f) => f.split(".").pop() ?? ""),
+      ].filter(Boolean).map((t) => t.toLowerCase());
+
+      const k1 = 1.5, b = 0.75, avgDocLen = 40;
+      const taskBoostMap: Record<string, string[]> = {
+        feature: ["feature", "create", "implement", "build"],
+        bugfix: ["fix", "debug", "repair", "error", "bug"],
+        refactor: ["refactor", "clean", "quality", "lint"],
+        review: ["review", "analyze", "check", "audit"],
+        test: ["test", "spec", "vitest", "jest", "playwright"],
+        general: [],
+      };
+      const boostTerms = taskBoostMap[input.taskType] ?? [];
+
+      const scored = candidates.map((skill) => {
+        const tagsArr = (() => { try { return JSON.parse(skill.tags ?? "[]") as string[]; } catch { return []; } })();
+        const text = [skill.name ?? "", skill.description ?? "", tagsArr.join(" "), skill.category ?? ""].join(" ").toLowerCase();
+        const tokens = text.split(/\s+/);
+        const docLen = tokens.length;
+        let score = 0;
+        for (const term of keywords) {
+          const tf = tokens.filter((t) => t.includes(term)).length;
+          if (tf === 0) continue;
+          const idf = Math.log(1 + (100 - 1 + 0.5) / (1 + 1));
+          score += idf * ((tf * (k1 + 1)) / (tf + k1 * (1 - b + b * (docLen / avgDocLen))));
+        }
+        for (const bt of boostTerms) { if (text.includes(bt)) score += 0.5; }
+        return { id: skill.id, name: skill.name, description: skill.description ?? "", category: skill.category ?? "", score: Math.round(score * 100) / 100 };
+      });
+
+      const topSkills = scored
+        .filter((s) => s.score > 0)
+        .sort((a, b_) => b_.score - a.score)
+        .slice(0, 5);
+
+      const pushEvent = {
+        type: "skill_recommendation_pushed",
+        userId: ctx.user.id,
+        projectPath: input.projectPath ?? "(unknown)",
+        taskType: input.taskType,
+        language: input.language,
+        framework: input.framework,
+        recommendedSkills: topSkills,
+        timestamp: Date.now(),
+      };
+
+      // WebSocketでダッシュボードにブロードキャスト
+      broadcastEvolutionEvent(pushEvent);
+
+      return {
+        success: true,
+        recommendedSkills: topSkills,
+        totalCandidates: candidates.length,
+        pushedAt: new Date(),
+      };
+    }),
 });
 
 // ─────────────────────────────────────────────

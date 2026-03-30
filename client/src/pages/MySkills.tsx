@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
 import { Progress } from "@/components/ui/progress";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -152,6 +152,10 @@ interface MySkillCardProps {
 }
 
 function MySkillCard({ skill, tags, viewMode, onNavigate, onUpload, onDelete, uploadPending, deletePending }: MySkillCardProps) {
+  // 説明を30-40文字に切り詰め（スペースが空いている箇所に表示）
+  const shortDesc = skill.description
+    ? (skill.description.length > 40 ? skill.description.slice(0, 38) + "…" : skill.description)
+    : "説明なし";
   const menu = (
     <DropdownMenu>
       <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
@@ -193,7 +197,7 @@ function MySkillCard({ skill, tags, viewMode, onNavigate, onUpload, onDelete, up
                 {skill.category && <Badge variant="outline" className="text-[10px] px-1.5 py-0">{skill.category}</Badge>}
                 {skill.isPublic ? <><Globe className="w-3 h-3 text-primary" /></> : <><Lock className="w-3 h-3 text-muted-foreground" /></>}
               </div>
-              <p className="text-xs text-muted-foreground line-clamp-1">{skill.description ?? "説明なし"}</p>
+              <p className="text-xs text-muted-foreground line-clamp-1">{shortDesc}</p>
               <div className="flex items-center gap-2 mt-1">
                 {tags.slice(0, 4).map((tag) => <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-muted/50 text-muted-foreground">#{tag}</span>)}
               </div>
@@ -238,7 +242,7 @@ function MySkillCard({ skill, tags, viewMode, onNavigate, onUpload, onDelete, up
             <p className="text-xs font-semibold truncate flex-1">{skill.name}</p>
             {menu}
           </div>
-          <p className="text-[10px] text-muted-foreground line-clamp-2 mb-1">{skill.description ?? "説明なし"}</p>
+          <p className="text-[10px] text-muted-foreground line-clamp-2 mb-1">{shortDesc}</p>
           <div className="text-[10px] text-muted-foreground flex items-center gap-1">
             <Clock className="w-3 h-3" />
             {formatDistanceToNow(new Date(skill.updatedAt), { addSuffix: true, locale: ja })}
@@ -265,7 +269,7 @@ function MySkillCard({ skill, tags, viewMode, onNavigate, onUpload, onDelete, up
           </div>
           {menu}
         </div>
-        <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{skill.description ?? "説明なし"}</p>
+        <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{shortDesc}</p>
         {tags.length > 0 && (
           <div className="flex flex-wrap gap-1 mb-3">
             {tags.slice(0, 3).map((tag) => <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-muted/50 text-muted-foreground">#{tag}</span>)}
@@ -464,6 +468,8 @@ function HealthMonitorTab() {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function MySkills() {
+  const [location] = useLocation();
+  const isHealth = location === "/skills/health";
   const { data: skills = [] } = trpc.skills.list.useQuery();
   const { data: healthList = [] } = trpc.health.list.useQuery();
   type HealthEntry = { status: string; qualityScore: number };
@@ -478,9 +484,13 @@ export default function MySkills() {
         <div className="flex items-start justify-between">
           <div>
             <h1 className="text-xl font-bold flex items-center gap-2">
-              <Brain className="w-5 h-5 text-primary" />マイスキル
+              {isHealth
+                ? <><Activity className="w-5 h-5 text-primary" />ヘルスモニター</>
+                : <><Brain className="w-5 h-5 text-primary" />マイスキル</>}
             </h1>
-            <p className="text-sm text-muted-foreground mt-0.5">スキルの管理とヘルス監視</p>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              {isHealth ? "スキルの品質スコアと健全性を監視" : "スキルの管理とヘルス監視"}
+            </p>
           </div>
           <div className="flex items-center gap-2">
             {critical > 0 && (
@@ -493,28 +503,13 @@ export default function MySkills() {
                 <AlertTriangle className="w-3 h-3 mr-1" />{warning}件警告
               </Badge>
             )}
+            {!isHealth && (
+              <Badge variant="secondary" className="text-xs">{skills.length}件</Badge>
+            )}
           </div>
         </div>
-
-        {/* Tabs */}
-        <Tabs defaultValue="skills">
-          <TabsList className="w-full max-w-sm">
-            <TabsTrigger value="skills" className="flex-1 flex items-center gap-2">
-              <Brain className="w-4 h-4" />スキル一覧
-              <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0">{skills.length}</Badge>
-            </TabsTrigger>
-            <TabsTrigger value="health" className="flex-1 flex items-center gap-2">
-              <Activity className="w-4 h-4" />ヘルスモニター
-              {(critical + warning) > 0 && (
-                <Badge className="ml-1 text-[10px] px-1.5 py-0 bg-amber-500/20 text-amber-400 border-amber-500/30 border">
-                  {critical + warning}
-                </Badge>
-              )}
-            </TabsTrigger>
-          </TabsList>
-          <TabsContent value="skills" className="mt-4"><SkillsListTab /></TabsContent>
-          <TabsContent value="health" className="mt-4"><HealthMonitorTab /></TabsContent>
-        </Tabs>
+        {/* Content by URL path – no tabs, sidebar drives navigation */}
+        {isHealth ? <HealthMonitorTab /> : <SkillsListTab />}
       </div>
     </DashboardLayout>
   );

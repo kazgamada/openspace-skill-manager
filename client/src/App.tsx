@@ -20,8 +20,10 @@ function Router() {
       <Route path="/" component={Home} />
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/skills" component={MySkills} />
+      <Route path="/skills/health" component={MySkills} />
       <Route path="/skills/:id" component={SkillDetail} />
       <Route path="/community" component={Community} />
+      <Route path="/community/sources" component={Community} />
       <Route path="/genealogy" component={Genealogy} />
       <Route path="/genealogy/:skillId" component={Genealogy} />
       {/* Admin routes */}

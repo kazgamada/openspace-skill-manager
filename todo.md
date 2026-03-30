@@ -130,3 +130,24 @@
 - [x] レイアウト切り替え: MySkills.tsxに実装（マイスキル）
 - [x] MySkillCard・MySkillsGridコンポーネント分離（各モード対応）
 - [x] TSエラー 0件・Vitest 48件全通過
+
+## 5機能追加（スキル説明・Newバッジ・重複排除・モニター通知・Agent連携サブナビ）
+- [ ] スキル説明30-40字: MySkills.tsx リスト表示の空きスペースに description を表示
+- [ ] スキル説明30-40字: Community.tsx 各レイアウトの空きスペースに description を表示
+- [ ] Newバッジ: 直近7日以内に同期・作成されたスキルに「New」バッジを表示（MySkills/Community両方）
+- [ ] ソースリポジトリリンク: everything-claude-code 由来スキルカードに「元リポジトリを開く」ボタン追加
+- [ ] 重複排除バックエンド: skills.create / community.install 時にタイトル+更新日時が一致する場合はエラー返却
+- [ ] 重複排除バックエンド: 既存の重複レコードを一括削除する admin.deduplicateSkills ルーター追加
+- [ ] 重複排除フロントエンド: インポート時に重複検出メッセージを表示してスキップ
+- [ ] プロジェクトモニター通知バックエンド: claude.monitorProject ルーター（プロジェクト情報→スキル推薦→通知保存）
+- [ ] プロジェクトモニター通知フロントエンド: Dashboard.tsx に「推薦スキル通知」カードを表示
+- [ ] Agent連携サブナビ: DashboardLayout.tsx の「Agent連携」を第2階層メニューに変換（GitHub取得・AIマージ・差分インポート・自動タグ付け・単体インポート・スマート起動・MCP設定）
+- [ ] Agent連携サブナビ: ClaudeIntegration.tsx をサブナビ対応（URL パスで各タブに直接遷移）
+
+## サイドバー第2階層ナビゲーション統一（マイスキル・スキル広場・Agent連携）
+- [ ] DashboardLayout: マイスキル配下に「スキル一覧」「ヘルスモニター」を第2階層メニューとして追加
+- [ ] DashboardLayout: スキル広場配下に「スキル一覧」「ソース管理」を第2階層メニューとして追加
+- [ ] DashboardLayout: Agent連携配下に「GitHub取得」「AIマージ」「差分インポート」「自動タグ付け」「単体インポート」「スマート起動」「MCP設定」を第2階層メニューとして追加
+- [ ] MySkills.tsx: タブUIを削除し、URLパラメータ（?tab=health等）でコンテンツを切り替え
+- [ ] Community.tsx: タブUIを削除し、URLパラメータ（?tab=sources等）でコンテンツを切り替え
+- [ ] ClaudeIntegration.tsx: タブUIを削除し、URLパラメータ（?tab=github等）でコンテンツを切り替え

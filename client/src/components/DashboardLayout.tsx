@@ -23,22 +23,29 @@ import {
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import {
+  Activity,
   Brain,
   ChevronDown,
   ChevronRight,
+  Cpu,
+  Database,
   GitBranch,
+  GitMerge,
+  Github,
   LayoutDashboard,
   Link2,
   LogOut,
   PanelLeft,
   Settings,
   Shield,
-  Store,
-  Users,
-  Cpu,
-  UserCircle,
-  Zap,
   Sparkles,
+  Store,
+  Tag,
+  Upload,
+  UserCircle,
+  Users,
+  Wand2,
+  Zap,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -47,24 +54,40 @@ import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 
 // ─── Navigation structure ───────────────────────────────────────────────────
-const coreMenuItems = [
-  { icon: LayoutDashboard, label: "ダッシュボード", path: "/dashboard" },
-  { icon: Brain,           label: "マイスキル",     path: "/skills" },
-  { icon: Store,           label: "スキル広場",     path: "/community" },
-  { icon: GitBranch,       label: "スキル系譜",     path: "/genealogy" },
-  { icon: Sparkles,        label: "Agent連携",   path: "/claude" },
+
+// マイスキルのサブメニュー
+const mySkillsSubItems = [
+  { icon: Brain,    label: "スキル一覧",     path: "/skills" },
+  { icon: Activity, label: "ヘルスモニター", path: "/skills/health" },
+];
+
+// スキル広場のサブメニュー
+const communitySubItems = [
+  { icon: Store,    label: "スキル一覧",   path: "/community" },
+  { icon: Database, label: "ソース管理",   path: "/community/sources" },
+];
+
+// Agent連携のサブメニュー
+const claudeSubItems = [
+  { icon: Github,   label: "GitHub取得",   path: "/claude/github" },
+  { icon: GitMerge, label: "AIマージ",     path: "/claude/merge" },
+  { icon: GitBranch,label: "差分インポート", path: "/claude/diff" },
+  { icon: Tag,      label: "自動タグ付け", path: "/claude/tags" },
+  { icon: Upload,   label: "単体インポート", path: "/claude/single" },
+  { icon: Sparkles, label: "スマート起動", path: "/claude/smart" },
+  { icon: Wand2,    label: "MCP設定",      path: "/claude/mcp" },
 ];
 
 // ユーザー用「設定」サブメニュー
 const userSettingsSubItems = [
-  { icon: Link2,       label: "連携",     path: "/settings/integrations" },
+  { icon: Link2, label: "連携", path: "/settings/integrations" },
 ];
 
 // 管理者パネルのサブメニュー
 const adminSubItems = [
-  { icon: UserCircle,  label: "アカウント", path: "/admin/account" },
-  { icon: Users,       label: "ユーザー管理", path: "/admin/users" },
-  { icon: Cpu,         label: "システム",   path: "/admin/system" },
+  { icon: UserCircle, label: "アカウント",   path: "/admin/account" },
+  { icon: Users,      label: "ユーザー管理", path: "/admin/users" },
+  { icon: Cpu,        label: "システム",     path: "/admin/system" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "osm-sidebar-width";
@@ -130,6 +153,87 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   );
 }
 
+// ─── サブメニュー展開コンポーネント ────────────────────────────────────────
+function SubMenu({
+  isOpen,
+  items,
+  location,
+  setLocation,
+}: {
+  isOpen: boolean;
+  items: { icon: React.ElementType; label: string; path: string }[];
+  location: string;
+  setLocation: (path: string) => void;
+}) {
+  if (!isOpen) return null;
+  return (
+    <div className="ml-3 pl-3 border-l border-sidebar-border/60 mt-0.5 mb-0.5 space-y-0.5">
+      {items.map((sub) => {
+        const isSubActive = location === sub.path || location.startsWith(sub.path + "/");
+        return (
+          <SidebarMenuItem key={sub.path}>
+            <SidebarMenuButton
+              isActive={isSubActive}
+              onClick={() => setLocation(sub.path)}
+              className="h-8 font-normal text-xs"
+            >
+              <sub.icon className={`h-3.5 w-3.5 ${isSubActive ? "text-primary" : "text-muted-foreground"}`} />
+              <span className="text-xs">{sub.label}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── 展開可能な親メニューアイテム ─────────────────────────────────────────
+function ExpandableMenuItem({
+  icon: Icon,
+  label,
+  isActive,
+  isOpen,
+  isCollapsed,
+  defaultPath,
+  onToggle,
+  tooltip,
+}: {
+  icon: React.ElementType;
+  label: string;
+  isActive: boolean;
+  isOpen: boolean;
+  isCollapsed: boolean;
+  defaultPath: string;
+  onToggle: () => void;
+  tooltip: string;
+}) {
+  const [, setLocation] = useLocation();
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        isActive={isActive}
+        onClick={() => {
+          if (isCollapsed) {
+            setLocation(defaultPath);
+          } else {
+            onToggle();
+          }
+        }}
+        tooltip={tooltip}
+        className="h-9 font-normal"
+      >
+        <Icon className={`h-4 w-4 ${isActive ? "text-primary" : "text-muted-foreground"}`} />
+        <span className="text-sm flex-1">{label}</span>
+        {!isCollapsed && (
+          isOpen
+            ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+        )}
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+}
+
 function DashboardLayoutContent({
   children,
   setSidebarWidth,
@@ -146,19 +250,27 @@ function DashboardLayoutContent({
   const isMobile = useIsMobile();
   const isAdmin = user?.role === "admin";
 
-  // 「設定」サブメニューの展開状態
+  // 各セクションの展開状態
+  const isSkillsActive = location.startsWith("/skills");
+  const isCommunityActive = location.startsWith("/community");
+  const isClaudeActive = location.startsWith("/claude");
   const isSettingsActive = location.startsWith("/settings");
-  const [settingsOpen, setSettingsOpen] = useState(isSettingsActive);
-
-  // 「管理者パネル」サブメニューの展開状態
   const isAdminActive = location.startsWith("/admin");
+
+  const [skillsOpen, setSkillsOpen] = useState(isSkillsActive);
+  const [communityOpen, setCommunityOpen] = useState(isCommunityActive);
+  const [claudeOpen, setClaudeOpen] = useState(isClaudeActive);
+  const [settingsOpen, setSettingsOpen] = useState(isSettingsActive);
   const [adminOpen, setAdminOpen] = useState(isAdminActive);
 
   // ページ遷移で自動展開
   useEffect(() => {
+    if (isSkillsActive) setSkillsOpen(true);
+    if (isCommunityActive) setCommunityOpen(true);
+    if (isClaudeActive) setClaudeOpen(true);
     if (isSettingsActive) setSettingsOpen(true);
     if (isAdminActive) setAdminOpen(true);
-  }, [isSettingsActive, isAdminActive]);
+  }, [isSkillsActive, isCommunityActive, isClaudeActive, isSettingsActive, isAdminActive]);
 
   useEffect(() => {
     if (isCollapsed) setIsResizing(false);
@@ -188,7 +300,20 @@ function DashboardLayoutContent({
 
   // アクティブラベル（モバイルヘッダー用）
   const allPaths = [
-    ...coreMenuItems,
+    { path: "/dashboard", label: "ダッシュボード" },
+    { path: "/skills/health", label: "ヘルスモニター" },
+    { path: "/skills", label: "マイスキル" },
+    { path: "/community/sources", label: "ソース管理" },
+    { path: "/community", label: "スキル広場" },
+    { path: "/genealogy", label: "スキル系譜" },
+    { path: "/claude/github", label: "GitHub取得" },
+    { path: "/claude/merge", label: "AIマージ" },
+    { path: "/claude/diff", label: "差分インポート" },
+    { path: "/claude/tags", label: "自動タグ付け" },
+    { path: "/claude/single", label: "単体インポート" },
+    { path: "/claude/smart", label: "スマート起動" },
+    { path: "/claude/mcp", label: "MCP設定" },
+    { path: "/claude", label: "Agent連携" },
     { path: "/settings", label: "設定" },
     { path: "/admin", label: "管理者パネル" },
   ];
@@ -227,23 +352,91 @@ function DashboardLayoutContent({
           <SidebarContent className="gap-0 py-2">
             <SidebarMenu className="px-2">
 
-              {/* Core 4 items */}
-              {coreMenuItems.map((item) => {
-                const isActive = location.startsWith(item.path);
-                return (
-                  <SidebarMenuItem key={item.path}>
-                    <SidebarMenuButton
-                      isActive={isActive}
-                      onClick={() => setLocation(item.path)}
-                      tooltip={item.label}
-                      className="h-9 font-normal"
-                    >
-                      <item.icon className={`h-4 w-4 ${isActive ? "text-primary" : "text-muted-foreground"}`} />
-                      <span className="text-sm">{item.label}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
+              {/* ダッシュボード */}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={location === "/dashboard" || location === "/"}
+                  onClick={() => setLocation("/dashboard")}
+                  tooltip="ダッシュボード"
+                  className="h-9 font-normal"
+                >
+                  <LayoutDashboard className={`h-4 w-4 ${(location === "/dashboard" || location === "/") ? "text-primary" : "text-muted-foreground"}`} />
+                  <span className="text-sm">ダッシュボード</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              {/* ─── マイスキル（展開可能）─── */}
+              <ExpandableMenuItem
+                icon={Brain}
+                label="マイスキル"
+                isActive={isSkillsActive}
+                isOpen={skillsOpen}
+                isCollapsed={isCollapsed}
+                defaultPath="/skills"
+                onToggle={() => setSkillsOpen((v) => !v)}
+                tooltip="マイスキル"
+              />
+              {!isCollapsed && (
+                <SubMenu
+                  isOpen={skillsOpen}
+                  items={mySkillsSubItems}
+                  location={location}
+                  setLocation={setLocation}
+                />
+              )}
+
+              {/* ─── スキル広場（展開可能）─── */}
+              <ExpandableMenuItem
+                icon={Store}
+                label="スキル広場"
+                isActive={isCommunityActive}
+                isOpen={communityOpen}
+                isCollapsed={isCollapsed}
+                defaultPath="/community"
+                onToggle={() => setCommunityOpen((v) => !v)}
+                tooltip="スキル広場"
+              />
+              {!isCollapsed && (
+                <SubMenu
+                  isOpen={communityOpen}
+                  items={communitySubItems}
+                  location={location}
+                  setLocation={setLocation}
+                />
+              )}
+
+              {/* スキル系譜 */}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={location.startsWith("/genealogy")}
+                  onClick={() => setLocation("/genealogy")}
+                  tooltip="スキル系譜"
+                  className="h-9 font-normal"
+                >
+                  <GitBranch className={`h-4 w-4 ${location.startsWith("/genealogy") ? "text-primary" : "text-muted-foreground"}`} />
+                  <span className="text-sm">スキル系譜</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              {/* ─── Agent連携（展開可能）─── */}
+              <ExpandableMenuItem
+                icon={Sparkles}
+                label="Agent連携"
+                isActive={isClaudeActive}
+                isOpen={claudeOpen}
+                isCollapsed={isCollapsed}
+                defaultPath="/claude/github"
+                onToggle={() => setClaudeOpen((v) => !v)}
+                tooltip="Agent連携"
+              />
+              {!isCollapsed && (
+                <SubMenu
+                  isOpen={claudeOpen}
+                  items={claudeSubItems}
+                  location={location}
+                  setLocation={setLocation}
+                />
+              )}
 
               {/* ─── 設定（ユーザー用）+ サブメニュー ─── */}
               {!isCollapsed && (
@@ -277,25 +470,14 @@ function DashboardLayoutContent({
                 </SidebarMenuButton>
               </SidebarMenuItem>
 
-              {/* 設定 サブメニュー（連携のみ） */}
+              {/* 設定 サブメニュー */}
               {!isCollapsed && settingsOpen && (
-                <div className="ml-3 pl-3 border-l border-sidebar-border/60 mt-0.5 mb-0.5 space-y-0.5">
-                  {userSettingsSubItems.map((sub) => {
-                    const isSubActive = location.startsWith(sub.path);
-                    return (
-                      <SidebarMenuItem key={sub.path}>
-                        <SidebarMenuButton
-                          isActive={isSubActive}
-                          onClick={() => setLocation(sub.path)}
-                          className="h-8 font-normal text-xs"
-                        >
-                          <sub.icon className={`h-3.5 w-3.5 ${isSubActive ? "text-primary" : "text-muted-foreground"}`} />
-                          <span className="text-xs">{sub.label}</span>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    );
-                  })}
-                </div>
+                <SubMenu
+                  isOpen={settingsOpen}
+                  items={userSettingsSubItems}
+                  location={location}
+                  setLocation={setLocation}
+                />
               )}
 
               {/* ─── 管理者セクション ─── */}
@@ -337,23 +519,12 @@ function DashboardLayoutContent({
 
                   {/* 管理者パネル サブメニュー */}
                   {!isCollapsed && adminOpen && (
-                    <div className="ml-3 pl-3 border-l border-sidebar-border/60 mt-0.5 mb-0.5 space-y-0.5">
-                      {adminSubItems.map((sub) => {
-                        const isSubActive = location.startsWith(sub.path);
-                        return (
-                          <SidebarMenuItem key={sub.path}>
-                            <SidebarMenuButton
-                              isActive={isSubActive}
-                              onClick={() => setLocation(sub.path)}
-                              className="h-8 font-normal text-xs"
-                            >
-                              <sub.icon className={`h-3.5 w-3.5 ${isSubActive ? "text-primary" : "text-muted-foreground"}`} />
-                              <span className="text-xs">{sub.label}</span>
-                            </SidebarMenuButton>
-                          </SidebarMenuItem>
-                        );
-                      })}
-                    </div>
+                    <SubMenu
+                      isOpen={adminOpen}
+                      items={adminSubItems}
+                      location={location}
+                      setLocation={setLocation}
+                    />
                   )}
                 </>
               )}

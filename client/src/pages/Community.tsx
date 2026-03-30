@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Search, Star, Download, Zap, Globe, Filter,
   CheckCircle2, TrendingUp, Award, Github, AlertCircle,
@@ -182,6 +181,14 @@ function SourcesTab() {
     onError: (e) => toast.error(e.message),
   });
 
+  const removeDuplicatesMutation = trpc.community.removeDuplicates.useMutation({
+    onSuccess: (data) => {
+      toast.success(`重複スキルを ${data.removed} 件削除しました`);
+      utils.community.list.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -191,10 +198,26 @@ function SourcesTab() {
             GitHub リポジトリを登録すると SKILL.md を自動取得・定期同期します
           </p>
         </div>
-        <Button size="sm" className="gap-1.5 h-8 text-xs" onClick={() => setAddOpen(true)}>
-          <Plus className="w-3.5 h-3.5" />
-          ソースを追加
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5 h-8 text-xs text-amber-400 border-amber-500/30 hover:bg-amber-500/10"
+            onClick={() => {
+              if (confirm("タイトルと更新日時が同一の重複スキルを検出・削除します。実行しますか？")) {
+                removeDuplicatesMutation.mutate();
+              }
+            }}
+            disabled={removeDuplicatesMutation.isPending}
+          >
+            {removeDuplicatesMutation.isPending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>}
+            重複を削除
+          </Button>
+          <Button size="sm" className="gap-1.5 h-8 text-xs" onClick={() => setAddOpen(true)}>
+            <Plus className="w-3.5 h-3.5" />
+            ソースを追加
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -312,6 +335,10 @@ function SourcesTab() {
               <ChevronRight className="w-3 h-3 text-primary shrink-0 mt-0.5" />
               <span>サーバー起動 30 秒後に初回同期を実行し、以降は設定した間隔（デフォルト 6 時間）で自動同期</span>
             </div>
+            <div className="flex items-start gap-2">
+              <ChevronRight className="w-3 h-3 text-primary shrink-0 mt-0.5" />
+              <span>タイトル＋更新日時が同一のスキルは重複とみなし、「重複を削除」ボタンで一括削除可能</span>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -337,6 +364,9 @@ interface SkillCardProps {
     generationCount: number | null;
     isInstalled: boolean | null;
     sourceId?: number | null;
+    lastSyncedAt?: Date | string | null;
+    repoOwner?: string | null;
+    repoName?: string | null;
   };
   viewMode: ViewMode;
   onInstall: (id: string) => void;
@@ -345,7 +375,18 @@ interface SkillCardProps {
 
 function SkillCard({ skill, viewMode, onInstall, isInstalling }: SkillCardProps) {
   const tags: string[] = skill.tags ? JSON.parse(skill.tags) : [];
-  const isSynced = !!(skill as any).sourceId;
+  const isSynced = !!(skill.sourceId);
+  // 1週間以内に同期されたスキルはNewバッジを表示
+  const isNew = skill.lastSyncedAt
+    ? (Date.now() - new Date(skill.lastSyncedAt).getTime()) < 7 * 24 * 60 * 60 * 1000
+    : false;
+  const githubUrl = skill.repoOwner && skill.repoName
+    ? `https://github.com/${skill.repoOwner}/${skill.repoName}/tree/main/skills/${skill.name}`
+    : null;
+  // 説明を30-40文字に切り詰め（スペースが空いている箇所に表示）
+  const shortDesc = skill.description
+    ? (skill.description.length > 40 ? skill.description.slice(0, 38) + "…" : skill.description)
+    : null;
 
   if (viewMode === "list-lg") {
     // リスト大: 横長カード、詳細情報フル表示
@@ -357,8 +398,11 @@ function SkillCard({ skill, viewMode, onInstall, isInstalling }: SkillCardProps)
               <Zap className="w-5 h-5 text-primary" />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
+              <div className="flex items-center gap-2 mb-1 flex-wrap">
                 <p className="text-sm font-semibold">{skill.name}</p>
+                {isNew && (
+                  <Badge className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 h-4 px-1.5">NEW</Badge>
+                )}
                 {isSynced && (
                   <Badge variant="outline" className="text-[9px] border-primary/30 text-primary/70 h-4 px-1">
                     <Github className="w-2.5 h-2.5 mr-0.5" />同期
@@ -369,12 +413,23 @@ function SkillCard({ skill, viewMode, onInstall, isInstalling }: SkillCardProps)
                   <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{skill.category}</Badge>
                 )}
               </div>
-              <p className="text-xs text-muted-foreground line-clamp-2 mb-2">{skill.description}</p>
-              <div className="flex items-center gap-4 text-[10px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground line-clamp-2 mb-2">{shortDesc || skill.description}</p>
+              <div className="flex items-center gap-4 text-[10px] text-muted-foreground flex-wrap">
                 <span className="text-muted-foreground/60">{skill.author}</span>
                 <span className="flex items-center gap-1"><Star className="w-3 h-3 text-amber-400" />{skill.stars}</span>
                 <span className="flex items-center gap-1"><Download className="w-3 h-3" />{skill.downloads}</span>
                 <span>Gen {skill.generationCount}</span>
+                {githubUrl && (
+                  <a
+                    href={githubUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 text-primary/70 hover:text-primary transition-colors"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Github className="w-3 h-3" />ソース
+                  </a>
+                )}
                 {tags.slice(0, 4).map((tag) => (
                   <span key={tag} className="px-1.5 py-0.5 rounded bg-muted/50">#{tag}</span>
                 ))}
@@ -409,9 +464,21 @@ function SkillCard({ skill, viewMode, onInstall, isInstalling }: SkillCardProps)
         </div>
         <div className="flex-1 min-w-0 flex items-center gap-2">
           <p className="text-xs font-medium truncate">{skill.name}</p>
+          {isNew && <Badge className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 h-4 px-1 shrink-0">NEW</Badge>}
           {isSynced && <Github className="w-3 h-3 text-primary/50 shrink-0" />}
           {skill.isInstalled && <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />}
-          <p className="text-[10px] text-muted-foreground truncate hidden sm:block">{skill.description}</p>
+          <p className="text-[10px] text-muted-foreground truncate hidden sm:block">{shortDesc}</p>
+          {githubUrl && (
+            <a
+              href={githubUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hidden lg:flex items-center gap-1 text-[10px] text-primary/60 hover:text-primary transition-colors shrink-0"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Github className="w-3 h-3" />
+            </a>
+          )}
         </div>
         <div className="flex items-center gap-2 shrink-0 text-[10px] text-muted-foreground">
           <span className="hidden md:flex items-center gap-1"><Star className="w-3 h-3 text-amber-400" />{skill.stars}</span>
@@ -435,18 +502,25 @@ function SkillCard({ skill, viewMode, onInstall, isInstalling }: SkillCardProps)
     return (
       <Card className="bg-card border-border card-hover">
         <CardContent className="p-3">
-          <div className="flex items-center gap-2 mb-2">
+          <div className="flex items-center gap-2 mb-1.5">
             <div className="w-6 h-6 rounded bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
               <Zap className="w-3 h-3 text-primary" />
             </div>
             <p className="text-xs font-semibold truncate flex-1">{skill.name}</p>
+            {isNew && <Badge className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 h-4 px-1 shrink-0">N</Badge>}
             {skill.isInstalled && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
           </div>
-          <p className="text-[10px] text-muted-foreground line-clamp-2 mb-2">{skill.description}</p>
+          <p className="text-[10px] text-muted-foreground line-clamp-2 mb-2">{shortDesc}</p>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
               <Star className="w-3 h-3 text-amber-400" />{skill.stars}
-              {isSynced && <Github className="w-3 h-3 text-primary/50" />}
+              {isSynced && githubUrl ? (
+                <a href={githubUrl} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
+                  <Github className="w-3 h-3 text-primary/50 hover:text-primary transition-colors" />
+                </a>
+              ) : isSynced ? (
+                <Github className="w-3 h-3 text-primary/50" />
+              ) : null}
             </div>
             <Button
               size="sm"
@@ -467,7 +541,7 @@ function SkillCard({ skill, viewMode, onInstall, isInstalling }: SkillCardProps)
   return (
     <Card className="bg-card border-border card-hover">
       <CardContent className="p-4">
-        <div className="flex items-start justify-between mb-3">
+        <div className="flex items-start justify-between mb-2">
           <div className="flex items-center gap-2 min-w-0">
             <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
               <Zap className="w-4 h-4 text-primary" />
@@ -478,6 +552,9 @@ function SkillCard({ skill, viewMode, onInstall, isInstalling }: SkillCardProps)
             </div>
           </div>
           <div className="flex items-center gap-1 shrink-0">
+            {isNew && (
+              <Badge className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 h-4 px-1.5">NEW</Badge>
+            )}
             {isSynced && (
               <Badge variant="outline" className="text-[9px] border-primary/30 text-primary/70 h-4 px-1">
                 <Github className="w-2.5 h-2.5 mr-0.5" />同期
@@ -486,7 +563,8 @@ function SkillCard({ skill, viewMode, onInstall, isInstalling }: SkillCardProps)
             {skill.isInstalled && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
           </div>
         </div>
-        <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{skill.description}</p>
+        {/* 30-40文字の説明 */}
+        <p className="text-xs text-muted-foreground mb-2 line-clamp-2">{shortDesc || skill.description}</p>
         <div className="mb-3">
           <div className="flex items-center justify-between mb-1">
             <span className="text-[10px] text-muted-foreground">品質スコア</span>
@@ -505,7 +583,18 @@ function SkillCard({ skill, viewMode, onInstall, isInstalling }: SkillCardProps)
           <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
             <span className="flex items-center gap-1"><Star className="w-3 h-3 text-amber-400" />{skill.stars}</span>
             <span className="flex items-center gap-1"><Download className="w-3 h-3" />{skill.downloads}</span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted/50">Gen {skill.generationCount}</span>
+            {githubUrl && (
+              <a
+                href={githubUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-primary/60 hover:text-primary transition-colors"
+                onClick={(e) => e.stopPropagation()}
+                title="GitHubでソースを表示"
+              >
+                <Github className="w-3 h-3" />
+              </a>
+            )}
           </div>
           <Button
             size="sm"
@@ -543,7 +632,8 @@ export default function Community() {
   const [searchInput, setSearchInput] = useState("");
   const [viewMode, setViewMode] = useViewMode("community-view-mode", "tile-lg");
   const utils = trpc.useUtils();
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
+  const isSources = location === "/community/sources";
   const { data: integrations } = trpc.settings.getIntegrations.useQuery();
   const githubConnected = Array.isArray(integrations)
     ? integrations.some((i: { service: string; connected: boolean }) => i.service === "github" && i.connected)
@@ -576,7 +666,12 @@ export default function Community() {
               <span className="font-medium text-amber-300">GitHub未連携</span>
               <span className="text-amber-400/80 ml-2">GitHubと連携するとプライベートリポジトリのスキルも検索・インポートできます</span>
             </div>
-            <Button variant="outline" size="sm" onClick={() => setLocation("/admin?tab=integrations")} className="h-7 text-xs gap-1.5 border-amber-500/30 text-amber-400 hover:bg-amber-500/10 shrink-0">
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 text-xs border-amber-500/30 text-amber-400 hover:bg-amber-500/10 shrink-0"
+              onClick={() => setLocation("/integration/github")}
+            >
               <Github className="w-3.5 h-3.5" />連携設定
             </Button>
           </div>
@@ -605,21 +700,8 @@ export default function Community() {
           </div>
         </div>
 
-        <Tabs defaultValue="browse">
-          <TabsList className="h-8 text-xs">
-            <TabsTrigger value="browse" className="text-xs px-3">
-              <Search className="w-3.5 h-3.5 mr-1.5" />
-              スキルを探す
-              <Badge variant="secondary" className="ml-1.5 text-[10px] h-4 px-1.5">{skills.length}</Badge>
-            </TabsTrigger>
-            <TabsTrigger value="sources" className="text-xs px-3">
-              <Github className="w-3.5 h-3.5 mr-1.5" />
-              ソース管理
-            </TabsTrigger>
-          </TabsList>
-
-          {/* ─── スキル一覧タブ ─── */}
-          <TabsContent value="browse" className="mt-4 space-y-4">
+        {!isSources ? (
+          <div className="space-y-4">
             {/* Search & Filter & ViewToggle */}
             <div className="flex items-center gap-3">
               <div className="relative flex-1">
@@ -689,13 +771,10 @@ export default function Community() {
                 ))}
               </SkillsGrid>
             )}
-          </TabsContent>
-
-          {/* ─── ソース管理タブ ─── */}
-          <TabsContent value="sources" className="mt-4">
-            <SourcesTab />
-          </TabsContent>
-        </Tabs>
+          </div>
+        ) : (
+          <SourcesTab />
+        )}
       </div>
     </DashboardLayout>
   );

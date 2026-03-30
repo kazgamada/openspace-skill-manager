@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useRoute } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -1055,73 +1056,49 @@ function McpConfigTab() {
   );
 }
 
+const CLAUDE_TAB_META: Record<string, { label: string; icon: React.ElementType; desc: string; color: string }> = {
+  github: { label: "GitHub取得",   icon: Github,    desc: "公開リポジトリからSKILL.mdを自動検出",         color: "from-purple-500/20 to-indigo-500/20 border-purple-500/30" },
+  merge:  { label: "AIマージ",     icon: Wand2,     desc: "複数スキルをLLMで統合・品質向上",         color: "from-amber-500/20 to-orange-500/20 border-amber-500/30" },
+  diff:   { label: "差分インポート", icon: GitMerge,  desc: "バージョン履歴を保持して更新",           color: "from-blue-500/20 to-cyan-500/20 border-blue-500/30" },
+  tags:   { label: "自動タグ付け", icon: Tag,       desc: "allowed-toolsからタグを自動生成",      color: "from-green-500/20 to-teal-500/20 border-green-500/30" },
+  single: { label: "単体インポート", icon: Upload,    desc: "SKILL.mdを直接貼り付けて登録",       color: "from-indigo-500/20 to-violet-500/20 border-indigo-500/30" },
+  smart:  { label: "スマート起動", icon: Sparkles,  desc: "プロジェクト分析で最適スキルを自動選択",   color: "from-emerald-500/20 to-teal-500/20 border-emerald-500/30" },
+  mcp:    { label: "MCP設定",      icon: Settings2, desc: "~/.claude.json用設定を生成",          color: "from-rose-500/20 to-pink-500/20 border-rose-500/30" },
+};
+
 export default function ClaudeIntegration() {
+  const [, params] = useRoute("/claude/:tab");
+  const activeTab = (params as { tab?: string } | null)?.tab ?? "github";
+  const meta = CLAUDE_TAB_META[activeTab] ?? CLAUDE_TAB_META.github;
+  const ActiveIcon = meta.icon as React.ElementType;
+
+  const tabContent: Record<string, React.ReactNode> = {
+    github: <GithubFetchTab />,
+    merge:  <AIMergeTab />,
+    diff:   <DiffImportTab />,
+    tags:   <AutoTagTab />,
+    single: <SingleImportTab />,
+    smart:  <SmartLaunchTab />,
+    mcp:    <McpConfigTab />,
+  };
+
   return (
     <DashboardLayout>
       <div className="p-6 space-y-6">
         {/* Header */}
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center">
-              <Layers className="w-4 h-4 text-white" />
+            <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${meta.color.split(" ")[0]} ${meta.color.split(" ")[1]} flex items-center justify-center`}>
+              <ActiveIcon className="w-4 h-4 text-white" />
             </div>
-            Claude Code 連携
+            {meta.label}
           </h1>
-          <p className="text-white/50 text-sm mt-1">
-            GitHubからスキルを取得、AIでマージ、差分インポートで品質を継続的に向上させます
-          </p>
+          <p className="text-white/50 text-sm mt-1">{meta.desc}</p>
         </div>
-
-        {/* Feature Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {[
-            { icon: Github, label: "GitHub取得", desc: "公開リポジトリからSKILL.mdを自動検出", color: "from-purple-500/20 to-indigo-500/20 border-purple-500/30" },
-            { icon: Wand2, label: "AIマージ", desc: "複数スキルをLLMで統合・品質向上", color: "from-amber-500/20 to-orange-500/20 border-amber-500/30" },
-            { icon: GitMerge, label: "差分インポート", desc: "バージョン履歴を保持して更新", color: "from-blue-500/20 to-cyan-500/20 border-blue-500/30" },
-            { icon: Tag, label: "自動タグ付け", desc: "allowed-toolsからタグを自動生成", color: "from-green-500/20 to-teal-500/20 border-green-500/30" },
-          ].map(({ icon: Icon, label, desc, color }) => (
-            <div key={label} className={`rounded-xl border bg-gradient-to-br p-4 ${color}`}>
-              <Icon className="w-5 h-5 text-white/80 mb-2" />
-              <p className="text-white font-medium text-sm">{label}</p>
-              <p className="text-white/50 text-xs mt-0.5">{desc}</p>
-            </div>
-          ))}
+        {/* Content */}
+        <div>
+          {tabContent[activeTab] ?? <GithubFetchTab />}
         </div>
-
-        {/* Tabs */}
-        <Tabs defaultValue="github" className="space-y-4">
-          <TabsList className="bg-white/5 border border-white/10 p-1 flex-wrap h-auto gap-1">
-            <TabsTrigger value="github" className="data-[state=active]:bg-purple-600 data-[state=active]:text-white text-white/60 gap-2 text-xs">
-              <Github className="w-3.5 h-3.5" />GitHub取得
-            </TabsTrigger>
-            <TabsTrigger value="merge" className="data-[state=active]:bg-amber-600 data-[state=active]:text-white text-white/60 gap-2 text-xs">
-              <Wand2 className="w-3.5 h-3.5" />AIマージ
-            </TabsTrigger>
-            <TabsTrigger value="diff" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-white/60 gap-2 text-xs">
-              <GitMerge className="w-3.5 h-3.5" />差分インポート
-            </TabsTrigger>
-            <TabsTrigger value="tags" className="data-[state=active]:bg-green-600 data-[state=active]:text-white text-white/60 gap-2 text-xs">
-              <Tag className="w-3.5 h-3.5" />自動タグ付け
-            </TabsTrigger>
-            <TabsTrigger value="single" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white text-white/60 gap-2 text-xs">
-              <Upload className="w-3.5 h-3.5" />単体インポート
-            </TabsTrigger>
-            <TabsTrigger value="smart" className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white text-white/60 gap-2 text-xs">
-              <Sparkles className="w-3.5 h-3.5" />スマート起動
-            </TabsTrigger>
-            <TabsTrigger value="mcp" className="data-[state=active]:bg-rose-600 data-[state=active]:text-white text-white/60 gap-2 text-xs">
-              <Settings2 className="w-3.5 h-3.5" />MCP設定
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="github"><GithubFetchTab /></TabsContent>
-          <TabsContent value="merge"><AIMergeTab /></TabsContent>
-          <TabsContent value="diff"><DiffImportTab /></TabsContent>
-          <TabsContent value="tags"><AutoTagTab /></TabsContent>
-          <TabsContent value="single"><SingleImportTab /></TabsContent>
-          <TabsContent value="smart"><SmartLaunchTab /></TabsContent>
-          <TabsContent value="mcp"><McpConfigTab /></TabsContent>
-        </Tabs>
       </div>
     </DashboardLayout>
   );
