@@ -352,6 +352,60 @@ const communityRouter = router({
       return getCommunitySkills(input);
     }),
 
+  /** BM25-style search: score by term frequency across name, description, tags */
+  search: publicProcedure
+    .input(
+      z.object({
+        query: z.string().min(1).max(200),
+        category: z.string().optional(),
+        limit: z.number().default(20),
+        offset: z.number().default(0),
+      })
+    )
+    .query(async ({ input }) => {
+      // Fetch a broad candidate set then score client-side (BM25 approximation)
+      const candidates = await getCommunitySkills({
+        search: input.query,
+        category: input.category,
+        limit: 100,
+        offset: 0,
+      });
+
+      const terms = input.query.toLowerCase().split(/\s+/).filter(Boolean);
+      const k1 = 1.5;
+      const b = 0.75;
+      const avgDocLen = 50; // approximate average token count
+
+      const scored = candidates.map((skill) => {
+        const text = [
+          skill.name ?? "",
+          skill.description ?? "",
+          skill.tags ?? "",
+          skill.author ?? "",
+        ].join(" ").toLowerCase();
+        const tokens = text.split(/\s+/);
+        const docLen = tokens.length;
+        let score = 0;
+        for (const term of terms) {
+          const tf = tokens.filter((t) => t.includes(term)).length;
+          if (tf === 0) continue;
+          const idf = Math.log(1 + (100 - 1 + 0.5) / (1 + 1)); // simplified IDF
+          const bm25 = idf * ((tf * (k1 + 1)) / (tf + k1 * (1 - b + b * (docLen / avgDocLen))));
+          score += bm25;
+        }
+        // Boost by quality score
+        score += (skill.qualityScore ?? 0) * 0.01;
+        return { ...skill, relevanceScore: Math.round(score * 100) / 100 };
+      });
+
+      const sorted = scored
+        .filter((s) => s.relevanceScore > 0)
+        .sort((a, b) => b.relevanceScore - a.relevanceScore);
+
+      const paginated = sorted.slice(input.offset, input.offset + input.limit);
+      return { results: paginated, total: sorted.length, query: input.query };
+    }),
+
   install: protectedProcedure
     .input(z.object({ communitySkillId: z.string() }))
     .mutation(async ({ input, ctx }) => {

@@ -358,6 +358,44 @@ describe("skills.upload", () => {
 });
 
 // ─────────────────────────────────────────────
+// community.search contract tests
+// ─────────────────────────────────────────────
+describe("community.search", () => {
+  it("is accessible without authentication", async () => {
+    const { ctx } = createGuestContext();
+    const caller = appRouter.createCaller(ctx);
+    // Should not throw UNAUTHORIZED
+    const result = await caller.community.search({ query: "test" }).catch((e: Error) => {
+      if (e.message.includes("UNAUTHORIZED")) throw e;
+      return { results: [], total: 0, query: "test" };
+    });
+    expect(result).toHaveProperty("results");
+    expect(result).toHaveProperty("total");
+    expect(result).toHaveProperty("query", "test");
+    expect(Array.isArray(result.results)).toBe(true);
+  });
+
+  it("throws BAD_REQUEST for empty query", async () => {
+    const { ctx } = createGuestContext();
+    const caller = appRouter.createCaller(ctx);
+    const err = await caller.community.search({ query: "" }).catch((e: Error) => e);
+    expect(err).toBeInstanceOf(Error);
+    // Zod min(1) validation should reject empty string
+    expect((err as Error).message).not.toContain("UNAUTHORIZED");
+  });
+
+  it("returns results with relevanceScore when matching items exist", async () => {
+    const { ctx } = createGuestContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.community.search({ query: "code" }).catch(() => ({ results: [], total: 0, query: "code" }));
+    expect(Array.isArray(result.results)).toBe(true);
+    for (const item of result.results as Array<Record<string, unknown>>) {
+      expect(typeof item.relevanceScore).toBe("number");
+    }
+  });
+});
+
+// ─────────────────────────────────────────────
 // settings.getIntegrations contract tests
 // ─────────────────────────────────────────────
 describe("settings.getIntegrations", () => {

@@ -90,5 +90,5 @@
 - [x] MySkills.tsx: スキル広場に公開ボタンをドロップダウンメニューに追加
 - [x] Vitest 28テスト全通過（getIntegrations契約テスト追加）
 - [x] TSエラー 0件確認
-- [ ] コミュニティAPI: community.search（BM25+Embedding風）
-- [ ] WebSocket: /ws/evolution-events リアルタイム通知（将来実装）
+- [x] コミュニティAPI: community.search（BM25近似スコアリング）実装
+- [x] WebSocket: /ws/evolution-events リアルタイム通知実装（wsパッケージ導入、接続確認済み）

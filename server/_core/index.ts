@@ -1,12 +1,25 @@
 import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
+import { WebSocketServer, WebSocket } from "ws";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+
+// ─── Evolution Event Bus (in-process pub/sub) ─────────────────────────────────────────────
+const evolutionClients = new Set<WebSocket>();
+
+export function broadcastEvolutionEvent(event: Record<string, unknown>) {
+  const payload = JSON.stringify(event);
+  Array.from(evolutionClients).forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(payload);
+    }
+  });
+}
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -60,6 +73,25 @@ async function startServer() {
   } else {
     serveStatic(app);
   }
+
+  // WebSocket server for real-time evolution events
+  const wss = new WebSocketServer({ noServer: true });
+  wss.on("connection", (ws) => {
+    evolutionClients.add(ws);
+    ws.send(JSON.stringify({ type: "connected", message: "Evolution event stream connected" }));
+    ws.on("close", () => evolutionClients.delete(ws));
+    ws.on("error", () => evolutionClients.delete(ws));
+  });
+
+  server.on("upgrade", (req, socket, head) => {
+    if (req.url === "/ws/evolution-events") {
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        wss.emit("connection", ws, req);
+      });
+    } else {
+      socket.destroy();
+    }
+  });
 
   const preferredPort = parseInt(process.env.PORT || "3000");
   const port = await findAvailablePort(preferredPort);
