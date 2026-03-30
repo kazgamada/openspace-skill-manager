@@ -92,3 +92,32 @@
 - [x] TSエラー 0件確認
 - [x] コミュニティAPI: community.search（BM25近似スコアリング）実装
 - [x] WebSocket: /ws/evolution-events リアルタイム通知実装（wsパッケージ導入、接続確認済み）
+
+## Agent Team × 自動スキル選択機能
+- [x] server/routers.ts: claude.recommend（BM25スコアリングでスキル推薦）実装
+- [x] server/routers.ts: claude.generateSkillMd（スキルIDからSKILL.mdテキスト生成）実装
+- [x] server/routers.ts: claude.recordUsage（スキル使用結果の記録）実装
+- [x] server/routers.ts: claude.generateMcpConfig（~/.claude.json用MCP設定JSON・オーケストレーターSKILL.md生成）実装
+- [x] client/src/pages/ClaudeIntegration.tsx: 「スマート起動」タブ追加（キーワード・言語・タスク種別でスキル検索・SKILL.mdプレビュー・コピー）
+- [x] client/src/pages/ClaudeIntegration.tsx: 「MCP設定」タブ追加（~/.claude.jsonスニペット・オーケストレーターSKILL.md・セットアップ手順）
+- [x] App.tsx: /claude ルート追加
+- [x] DashboardLayout.tsx: サイドバーに「Agent連携」メニュー追加
+- [x] Vitest 42テスト全通過（claude.recommend・claude.generateMcpConfigテスト追加）
+
+## 動的スキル取得・同期機能（everything-claude-code連携）
+- [x] DB: skill_sources テーブル追加（repoOwner/repoName/skillsPath/branch/autoSync/syncIntervalHours/lastSyncedAt/lastSyncStatus/lastSyncError/totalSkills/newSkillsLastSync/updatedSkillsLastSync）
+- [x] DB: community_skills に sourceId/upstreamSha/lastSyncedAt カラム追加・マイグレーション完了
+- [x] server/github-sync.ts: GitHub Contents API でスキル一覧取得・SHA差分比較・DB upsert
+- [x] server/db.ts: skill_sources CRUD ヘルパー追加（listSkillSources/getSkillSourceById/upsertSkillSource/deleteSkillSource）
+- [x] community.listSources: ソース一覧取得（公開）
+- [x] community.addSource: ソース登録＋即時同期トリガー（認証必須）
+- [x] community.syncSource: 手動同期トリガー（認証必須）
+- [x] community.removeSource: ソース削除（認証必須）
+- [x] community.syncStatus: 同期状態ポーリング（公開）
+- [x] community.updateSource: autoSync/syncIntervalHours 更新（認証必須）
+- [x] server/_core/index.ts: 起動30秒後＋設定間隔ごとの自動同期スケジューラー追加
+- [x] Community.tsx: 「ソース管理」タブ追加（ソース一覧・追加ダイアログ・同期ボタン・削除・仕組み説明）
+- [x] Community.tsx: everything-claude-code プリセットボタン追加
+- [x] Community.tsx: スキルカードに「同期済み」バッジ表示
+- [x] Vitest 48テスト全通過（community.listSources/addSource/syncSource/removeSource/syncStatus/updateSource テスト追加）
+- [x] TSエラー 0件確認

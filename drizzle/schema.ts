@@ -99,6 +99,31 @@ export type ExecutionLog = typeof executionLogs.$inferSelect;
 export type InsertExecutionLog = typeof executionLogs.$inferInsert;
 
 // ─────────────────────────────────────────────
+// Skill Sources (external repositories)
+// ─────────────────────────────────────────────
+export const skillSources = mysqlTable("skill_sources", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),          // 表示名 e.g. "everything-claude-code"
+  repoOwner: varchar("repoOwner", { length: 128 }).notNull(), // e.g. "affaan-m"
+  repoName: varchar("repoName", { length: 128 }).notNull(),   // e.g. "everything-claude-code"
+  skillsPath: varchar("skillsPath", { length: 512 }).default("skills").notNull(), // path in repo
+  branch: varchar("branch", { length: 128 }).default("main").notNull(),
+  autoSync: boolean("autoSync").default(true).notNull(),     // 自動同期有効
+  syncIntervalHours: int("syncIntervalHours").default(6).notNull(),
+  lastSyncedAt: timestamp("lastSyncedAt"),
+  lastSyncStatus: mysqlEnum("lastSyncStatus", ["idle", "syncing", "success", "error"]).default("idle").notNull(),
+  lastSyncError: text("lastSyncError"),
+  totalSkills: int("totalSkills").default(0).notNull(),
+  newSkillsLastSync: int("newSkillsLastSync").default(0).notNull(),
+  updatedSkillsLastSync: int("updatedSkillsLastSync").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type SkillSource = typeof skillSources.$inferSelect;
+export type InsertSkillSource = typeof skillSources.$inferInsert;
+
+// ─────────────────────────────────────────────
 // Community Skills (cloud cache)
 // ─────────────────────────────────────────────
 export const communitySkills = mysqlTable("community_skills", {
@@ -116,6 +141,10 @@ export const communitySkills = mysqlTable("community_skills", {
   generationCount: int("generationCount").default(1),
   codePreview: text("codePreview"),
   isInstalled: boolean("isInstalled").default(false),
+  // Dynamic sync fields
+  sourceId: int("sourceId").references(() => skillSources.id, { onDelete: "set null" }),
+  upstreamSha: varchar("upstreamSha", { length: 64 }), // GitHub blob SHA for change detection
+  lastSyncedAt: timestamp("lastSyncedAt"),
   cachedAt: timestamp("cachedAt").defaultNow().notNull(),
 });
 

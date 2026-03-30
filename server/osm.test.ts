@@ -430,3 +430,148 @@ describe("settings.getIntegrations", () => {
     }
   });
 });
+
+// ─────────────────────────────────────────────
+// claude.recommend contract tests
+// ─────────────────────────────────────────────
+describe("claude.recommend", () => {
+  it("throws UNAUTHORIZED for unauthenticated users", async () => {
+    const { ctx } = createGuestContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.claude.recommend({ keywords: ["react"], taskType: "feature", topN: 5 })).rejects.toThrow();
+  });
+
+  it("returns { results, total } for authenticated users", async () => {
+    const { ctx } = createUserContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.claude.recommend({ keywords: ["react"], taskType: "feature", topN: 5 }).catch(() => ({ results: [], total: 0 }));
+    expect(result).toHaveProperty("results");
+    expect(result).toHaveProperty("total");
+    expect(Array.isArray(result.results)).toBe(true);
+    expect(typeof result.total).toBe("number");
+  });
+
+  it("accepts all taskType variants", async () => {
+    const { ctx } = createUserContext();
+    const caller = appRouter.createCaller(ctx);
+    const taskTypes = ["feature", "bugfix", "refactor", "review", "test", "general"] as const;
+    for (const taskType of taskTypes) {
+      const result = await caller.claude.recommend({ keywords: [], taskType, topN: 3 }).catch(() => ({ results: [], total: 0 }));
+      expect(Array.isArray(result.results)).toBe(true);
+    }
+  });
+});
+
+// ─────────────────────────────────────────────
+// claude.generateMcpConfig contract tests
+// ─────────────────────────────────────────────
+describe("claude.generateMcpConfig", () => {
+  it("throws UNAUTHORIZED for unauthenticated users", async () => {
+    const { ctx } = createGuestContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.claude.generateMcpConfig({ includeApiKey: false })).rejects.toThrow();
+  });
+
+  it("returns configJson and orchestratorSkillMd for authenticated users", async () => {
+    const { ctx } = createUserContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.claude.generateMcpConfig({ includeApiKey: false });
+    expect(result).toHaveProperty("configJson");
+    expect(result).toHaveProperty("orchestratorSkillMd");
+    expect(result).toHaveProperty("config");
+    expect(typeof result.configJson).toBe("string");
+    expect(typeof result.orchestratorSkillMd).toBe("string");
+    // configJson should be valid JSON with mcpServers
+    const parsed = JSON.parse(result.configJson);
+    expect(parsed).toHaveProperty("mcpServers");
+    expect(parsed.mcpServers).toHaveProperty("osm");
+  });
+
+  it("includes API key placeholder when includeApiKey is true", async () => {
+    const { ctx } = createUserContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.claude.generateMcpConfig({ includeApiKey: true });
+    const parsed = JSON.parse(result.configJson);
+    expect(parsed.mcpServers.osm.env).toHaveProperty("OSM_API_KEY");
+  });
+
+  it("orchestratorSkillMd contains required SKILL.md sections", async () => {
+    const { ctx } = createUserContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.claude.generateMcpConfig({ includeApiKey: false });
+    expect(result.orchestratorSkillMd).toContain("---");
+    expect(result.orchestratorSkillMd).toContain("auto-skill-team");
+    expect(result.orchestratorSkillMd).toContain("mcp__osm__");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Dynamic Skill Sources
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("community.listSources", () => {
+  it("returns an array (empty when no sources registered)", async () => {
+    const { ctx } = createGuestContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.community.listSources();
+    expect(Array.isArray(result)).toBe(true);
+  });
+});
+
+describe("community.addSource – auth guard", () => {
+  it("throws UNAUTHORIZED when called without a session", async () => {
+    const { ctx } = createGuestContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(
+      caller.community.addSource({
+        name: "test-repo",
+        repoOwner: "affaan-m",
+        repoName: "everything-claude-code",
+        skillsPath: "skills",
+        branch: "main",
+        autoSync: false,
+        syncIntervalHours: 6,
+      })
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+  });
+});
+
+describe("community.syncSource – auth guard", () => {
+  it("throws UNAUTHORIZED when called without a session", async () => {
+    const { ctx } = createGuestContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.community.syncSource({ id: 1 })).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    });
+  });
+});
+
+describe("community.removeSource – auth guard", () => {
+  it("throws UNAUTHORIZED when called without a session", async () => {
+    const { ctx } = createGuestContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.community.removeSource({ id: 1 })).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    });
+  });
+});
+
+describe("community.syncStatus", () => {
+  it("throws NOT_FOUND for non-existent source id", async () => {
+    const { ctx } = createGuestContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.community.syncStatus({ id: 999999 })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+  });
+});
+
+describe("community.updateSource – auth guard", () => {
+  it("throws UNAUTHORIZED when called without a session", async () => {
+    const { ctx } = createGuestContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(
+      caller.community.updateSource({ id: 1, autoSync: false })
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+  });
+});

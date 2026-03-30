@@ -8,6 +8,7 @@ import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import { syncAllSources } from "../github-sync";
 
 // ─── Evolution Event Bus (in-process pub/sub) ─────────────────────────────────────────────
 const evolutionClients = new Set<WebSocket>();
@@ -106,3 +107,31 @@ async function startServer() {
 }
 
 startServer().catch(console.error);
+
+// ─── 定期自動同期スケジューラー ───────────────────────────────────────────────
+// 起動時に一度実行（サーバー起動から 30 秒待って DB 接続を安定させる）
+setTimeout(async () => {
+  try {
+    console.log("[AutoSync] Running initial skill source sync...");
+    const results = await syncAllSources();
+    const total = results.reduce((s, r) => s + r.newSkills + r.updatedSkills, 0);
+    console.log(`[AutoSync] Initial sync complete: ${results.length} sources, ${total} skills updated`);
+  } catch (e) {
+    console.error("[AutoSync] Initial sync error:", e);
+  }
+}, 30_000);
+
+// 6 時間ごとに定期実行
+setInterval(async () => {
+  try {
+    console.log("[AutoSync] Running scheduled skill source sync...");
+    const results = await syncAllSources();
+    const total = results.reduce((s, r) => s + r.newSkills + r.updatedSkills, 0);
+    if (total > 0) {
+      console.log(`[AutoSync] Scheduled sync complete: ${results.length} sources, ${total} skills updated`);
+      broadcastEvolutionEvent({ type: "skills_synced", count: total, timestamp: Date.now() });
+    }
+  } catch (e) {
+    console.error("[AutoSync] Scheduled sync error:", e);
+  }
+}, 6 * 60 * 60 * 1000); // 6 hours

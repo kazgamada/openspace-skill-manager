@@ -29,7 +29,14 @@ import {
   findSkillByNameForUser,
   getUserSettingsByUserId,
   upsertUserSettings,
+  getAllSkillSources,
+  getSkillSourceById,
+  createSkillSource,
+  updateSkillSource,
+  deleteSkillSource,
+  getCommunitySkillsBySource,
 } from "./db";
+import { syncSkillSource } from "./github-sync";
 import { invokeLLM } from "./_core/llm";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
@@ -410,6 +417,101 @@ const communityRouter = router({
     .input(z.object({ communitySkillId: z.string() }))
     .mutation(async ({ input, ctx }) => {
       await markCommunitySkillInstalled(input.communitySkillId);
+      return { success: true };
+    }),
+
+  // ─── 動的ソース管理 ───────────────────────────────────────────────
+
+  /** 登録済み外部ソース一覧 */
+  listSources: publicProcedure.query(async () => {
+    return getAllSkillSources();
+  }),
+
+  /** 新規ソース登録（登録後に初回同期を実行） */
+  addSource: protectedProcedure
+    .input(
+      z.object({
+        name: z.string().min(1).max(255),
+        repoOwner: z.string().min(1).max(128),
+        repoName: z.string().min(1).max(128),
+        skillsPath: z.string().default("skills"),
+        branch: z.string().default("main"),
+        autoSync: z.boolean().default(true),
+        syncIntervalHours: z.number().int().min(1).max(168).default(6),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const id = await createSkillSource({
+        name: input.name,
+        repoOwner: input.repoOwner,
+        repoName: input.repoName,
+        skillsPath: input.skillsPath,
+        branch: input.branch,
+        autoSync: input.autoSync,
+        syncIntervalHours: input.syncIntervalHours,
+        lastSyncStatus: "idle",
+        totalSkills: 0,
+        newSkillsLastSync: 0,
+        updatedSkillsLastSync: 0,
+      });
+      // 初回同期を非同期で開始（ブロックしない）
+      syncSkillSource(id).catch((e) =>
+        console.error(`[Sync] Initial sync failed for source ${id}:`, e)
+      );
+      return { id, message: "ソースを登録しました。初回同期を開始します..." };
+    }),
+
+  /** ソース削除 */
+  removeSource: protectedProcedure
+    .input(z.object({ id: z.number().int() }))
+    .mutation(async ({ input }) => {
+      await deleteSkillSource(input.id);
+      return { success: true };
+    }),
+
+  /** 手動同期トリガー */
+  syncSource: protectedProcedure
+    .input(z.object({ id: z.number().int() }))
+    .mutation(async ({ input }) => {
+      // 非同期で実行（ブラウザをブロックしない）
+      syncSkillSource(input.id).catch((e) =>
+        console.error(`[Sync] Manual sync failed for source ${input.id}:`, e)
+      );
+      return { success: true, message: "同期を開始しました" };
+    }),
+
+  /** 同期状態取得（ポーリング用） */
+  syncStatus: publicProcedure
+    .input(z.object({ id: z.number().int() }))
+    .query(async ({ input }) => {
+      const source = await getSkillSourceById(input.id);
+      if (!source) throw new TRPCError({ code: "NOT_FOUND" });
+      return {
+        id: source.id,
+        name: source.name,
+        lastSyncStatus: source.lastSyncStatus,
+        lastSyncedAt: source.lastSyncedAt,
+        lastSyncError: source.lastSyncError,
+        totalSkills: source.totalSkills,
+        newSkillsLastSync: source.newSkillsLastSync,
+        updatedSkillsLastSync: source.updatedSkillsLastSync,
+      };
+    }),
+
+  /** ソース設定更新（autoSync・間隔変更） */
+  updateSource: protectedProcedure
+    .input(
+      z.object({
+        id: z.number().int(),
+        autoSync: z.boolean().optional(),
+        syncIntervalHours: z.number().int().min(1).max(168).optional(),
+        name: z.string().optional(),
+        branch: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await updateSkillSource(id, data);
       return { success: true };
     }),
 });
@@ -1108,6 +1210,193 @@ Output ONLY the merged SKILL.md content (starting with ---), no explanations.`;
       const created = results.filter((r) => r.action === "created" && r.success).length;
       const updated = results.filter((r) => r.action === "updated" && r.success).length;
       return { success: true, total: results.length, succeeded, failed: results.length - succeeded, created, updated, results };
+    }),
+
+  /** Recommend skills for a project based on fingerprint + BM25 scoring */
+  recommend: protectedProcedure
+    .input(
+      z.object({
+        keywords: z.array(z.string()).max(30).default([]),
+        framework: z.string().optional(),
+        language: z.string().optional(),
+        taskType: z.enum(["feature", "bugfix", "refactor", "review", "test", "general"]).default("general"),
+        topN: z.number().min(1).max(20).default(5),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const candidates = await getSkillsByUser(ctx.user.id);
+      const terms = [
+        ...input.keywords,
+        input.framework ?? "",
+        input.language ?? "",
+        input.taskType,
+      ].map((t) => t.toLowerCase()).filter(Boolean);
+
+      const taskBoostMap: Record<string, string[]> = {
+        feature: ["feature", "create", "implement", "build"],
+        bugfix: ["fix", "debug", "repair", "error", "bug"],
+        refactor: ["refactor", "clean", "quality", "lint"],
+        review: ["review", "analyze", "check", "audit"],
+        test: ["test", "spec", "vitest", "jest", "playwright"],
+        general: [],
+      };
+      const boostTerms = taskBoostMap[input.taskType] ?? [];
+
+      const k1 = 1.5;
+      const b = 0.75;
+      const avgDocLen = 40;
+
+      const scored = candidates.map((skill) => {
+        const tagsArr = (() => { try { return JSON.parse(skill.tags ?? "[]") as string[]; } catch { return []; } })();
+        const text = [
+          skill.name ?? "",
+          skill.description ?? "",
+          tagsArr.join(" "),
+          skill.category ?? "",
+        ].join(" ").toLowerCase();
+        const tokens = text.split(/\s+/);
+        const docLen = tokens.length;
+        let score = 0;
+        for (const term of terms) {
+          const tf = tokens.filter((t) => t.includes(term)).length;
+          if (tf === 0) continue;
+          const idf = Math.log(1 + (100 - 1 + 0.5) / (1 + 1));
+          const bm25 = idf * ((tf * (k1 + 1)) / (tf + k1 * (1 - b + b * (docLen / avgDocLen))));
+          score += bm25;
+        }
+        // Boost by task type keyword match
+        for (const bt of boostTerms) {
+          if (text.includes(bt)) score += 0.5;
+        }
+        // Boost by quality
+        const versions = [] as { qualityScore: number }[];
+        score += ((skill as unknown as Record<string, unknown>).qualityScore as number ?? 50) * 0.005;
+        return { ...skill, relevanceScore: Math.round(score * 100) / 100 };
+      });
+
+      const results = scored
+        .filter((s) => s.relevanceScore > 0)
+        .sort((a, b) => b.relevanceScore - a.relevanceScore)
+        .slice(0, input.topN);
+
+      return { results, total: scored.filter((s) => s.relevanceScore > 0).length };
+    }),
+
+  /** Generate SKILL.md text for a skill by ID */
+  generateSkillMd: protectedProcedure
+    .input(z.object({ skillId: z.string() }))
+    .query(async ({ input, ctx }) => {
+      const skill = await getSkillById(input.skillId);
+      if (!skill) throw new TRPCError({ code: "NOT_FOUND", message: "スキルが見つかりません" });
+      if (skill.authorId !== ctx.user.id && ctx.user.role !== "admin") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "アクセス権限がありません" });
+      }
+      const versions = await getVersionsBySkill(input.skillId);
+      const latest = versions[0];
+      const tagsArr = (() => { try { return JSON.parse(skill.tags ?? "[]") as string[]; } catch { return []; } })();
+      const allowedToolsArr = (() => { try { return JSON.parse((skill as unknown as Record<string, unknown>).allowedTools as string ?? "[]") as string[]; } catch { return []; } })();
+
+      const frontmatter = [
+        `---`,
+        `name: ${skill.name}`,
+        `description: ${skill.description ?? ""}`,
+        allowedToolsArr.length > 0 ? `allowed-tools: ${allowedToolsArr.join(", ")}` : null,
+        `---`,
+      ].filter(Boolean).join("\n");
+
+      const body = latest?.codeContent
+        ? (latest.codeContent.startsWith("---") ? latest.codeContent : `${frontmatter}\n\n${latest.codeContent}`)
+        : `${frontmatter}\n\n${skill.description ?? ""}\n`;
+
+      return { skillMd: body, skillName: skill.name, version: latest?.version ?? "v1.0" };
+    }),
+
+  /** Record skill usage outcome to improve recommendation scoring */
+  recordUsage: protectedProcedure
+    .input(z.object({
+      skillId: z.string(),
+      taskType: z.string().optional(),
+      outcome: z.enum(["success", "failure", "partial"]),
+      effectivenessScore: z.number().min(0).max(100).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const logStatus = input.outcome === "success" ? "success" as const
+        : input.outcome === "partial" ? "partial" as const
+        : "failure" as const;
+      // Find latest version to associate log with
+      const versions = await getVersionsBySkill(input.skillId);
+      const latestVersion = versions[0];
+      if (!latestVersion) throw new TRPCError({ code: "NOT_FOUND", message: "スキルバージョンが見つかりません" });
+      await createExecutionLog({
+        id: nanoid(),
+        skillId: input.skillId,
+        skillVersionId: latestVersion.id,
+        status: logStatus,
+        executedAt: new Date(),
+        errorMessage: input.effectivenessScore != null ? `effectivenessScore:${input.effectivenessScore}` : null,
+      });
+      return { success: true };
+    }),
+
+  /** Generate ~/.claude.json MCP server config for OSM integration */
+  generateMcpConfig: protectedProcedure
+    .input(z.object({
+      serverUrl: z.string().url().optional(),
+      includeApiKey: z.boolean().default(false),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const baseUrl = input.serverUrl ?? "https://your-osm-instance.manus.space";
+      const config = {
+        mcpServers: {
+          osm: {
+            command: "node",
+            args: ["osm-mcp-server.js"],
+            env: {
+              OSM_API_URL: baseUrl,
+              ...(input.includeApiKey ? { OSM_API_KEY: "<your-api-key>" } : {}),
+            },
+          },
+        },
+      };
+      const orchestratorSkill = [
+        `---`,
+        `name: auto-skill-team`,
+        `description: プロジェクトを分析して最適なスキルを自動選択し、Agent Teamを起動する。新機能開発・バグ修正・リファクタリングを開始するときに使う。`,
+        `context: fork`,
+        `agent: Plan`,
+        `allowed-tools: Bash, mcp__osm__*`,
+        `---`,
+        ``,
+        `## タスク: 自動スキル選択 + Agent Team 起動`,
+        ``,
+        `### Step 1: プロジェクト分析`,
+        `プロジェクトの言語・フレームワーク・最近の変更を調べる:`,
+        `- !\`git log --oneline -10\``,
+        `- !\`cat package.json 2>/dev/null || cat Cargo.toml 2>/dev/null || echo "no manifest"\``,
+        `- !\`ls .claude/skills/ 2>/dev/null || echo "no local skills"\``,
+        ``,
+        `### Step 2: スキル推薦`,
+        `上記の情報をもとに mcp__osm__recommend_skills を呼び出し、タスク種別「$ARGUMENTS」に最適なスキルを上位5件取得する。`,
+        ``,
+        `### Step 3: スキル注入`,
+        `mcp__osm__inject_skills を呼び出し、推薦スキルを .claude/skills/ に書き出す。`,
+        ``,
+        `### Step 4: Agent Team 起動`,
+        `以下の構成で Agent Team を起動する:`,
+        `- **Lead**: タスク分解・進捗管理`,
+        `- **Teammate A (実装)**: 注入されたスキルを活用して $ARGUMENTS を実装`,
+        `- **Teammate B (レビュー)**: セキュリティ・パフォーマンス観点でレビュー`,
+        `- **Teammate C (テスト)**: テストカバレッジを確保`,
+        ``,
+        `### Step 5: 結果記録`,
+        `完了後、mcp__osm__record_skill_usage で各スキルの有効性スコアを記録する。`,
+      ].join("\n");
+
+      return {
+        config,
+        configJson: JSON.stringify(config, null, 2),
+        orchestratorSkillMd: orchestratorSkill,
+      };
     }),
 
   /** Parse a .mcp.json or ~/.claude.json snippet and return server list */

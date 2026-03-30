@@ -12,6 +12,7 @@ import Community from "./pages/Community";
 import Genealogy from "./pages/Genealogy";
 import AdminSettings from "./pages/AdminSettings";
 import UserSettings from "./pages/UserSettings";
+import ClaudeIntegration from "./pages/ClaudeIntegration";
 
 function Router() {
   return (
@@ -31,6 +32,8 @@ function Router() {
       {/* User settings routes */}
       <Route path="/settings" component={UserSettings} />
       <Route path="/settings/integrations" component={UserSettings} />
+      <Route path="/claude" component={ClaudeIntegration} />
+      <Route path="/claude/:tab" component={ClaudeIntegration} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

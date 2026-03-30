@@ -29,6 +29,13 @@
       "when": 1774836585850,
       "tag": "0003_parallel_spot",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1774874893140,
+      "tag": "0004_fearless_nighthawk",
+      "breakpoints": true
     }
   ]
 }

@@ -466,3 +466,48 @@ export async function upsertUserSettings(
     await db.insert(userSettings).values({ userId, ...data });
   }
 }
+
+// ─────────────────────────────────────────────
+// Skill Sources (external repositories)
+// ─────────────────────────────────────────────
+import { skillSources, SkillSource, InsertSkillSource } from "../drizzle/schema";
+
+export async function getAllSkillSources(): Promise<SkillSource[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(skillSources).orderBy(skillSources.createdAt);
+}
+
+export async function getSkillSourceById(id: number): Promise<SkillSource | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const r = await db.select().from(skillSources).where(eq(skillSources.id, id)).limit(1);
+  return r[0];
+}
+
+export async function createSkillSource(data: Omit<InsertSkillSource, "id" | "createdAt" | "updatedAt">): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(skillSources).values(data);
+  return (result as any)[0]?.insertId ?? 0;
+}
+
+export async function updateSkillSource(id: number, data: Partial<InsertSkillSource>): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(skillSources).set(data).where(eq(skillSources.id, id));
+}
+
+export async function deleteSkillSource(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  // 関連する community_skills の sourceId を null に
+  await db.update(communitySkills).set({ sourceId: null }).where(eq(communitySkills.sourceId, id));
+  await db.delete(skillSources).where(eq(skillSources.id, id));
+}
+
+export async function getCommunitySkillsBySource(sourceId: number): Promise<CommunitySkill[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(communitySkills).where(eq(communitySkills.sourceId, sourceId));
+}

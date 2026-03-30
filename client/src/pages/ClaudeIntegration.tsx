@@ -17,6 +17,7 @@ import {
   RefreshCw, ArrowRight, FileText, Layers, Zap, AlertCircle,
   ChevronDown, ChevronUp, Plus, Trash2, Eye, Download, Loader2,
   Bot, Copy, Wifi, WifiOff, Terminal, Code2, Server, FileCode2,
+  Sparkles, Settings2, Search, Star, ChevronRight, ClipboardCopy,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -672,6 +673,388 @@ function SingleImportTab() {
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
+// ─── Smart Launch Tab ─────────────────────────────────────────────────────────
+function SmartLaunchTab() {
+  const [keywords, setKeywords] = useState("");
+  const [framework, setFramework] = useState("");
+  const [language, setLanguage] = useState("");
+  const [taskType, setTaskType] = useState<"feature"|"bugfix"|"refactor"|"review"|"test"|"general">("general");
+  const [topN, setTopN] = useState(5);
+  const [queryEnabled, setQueryEnabled] = useState(false);
+  const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
+
+  const recommendQuery = trpc.claude.recommend.useQuery(
+    { keywords: keywords.split(/[,\s]+/).filter(Boolean), framework: framework || undefined, language: language || undefined, taskType, topN },
+    { enabled: queryEnabled }
+  );
+
+  const skillMdQuery = trpc.claude.generateSkillMd.useQuery(
+    { skillId: selectedSkillId! },
+    { enabled: !!selectedSkillId }
+  );
+
+  const recordUsage = trpc.claude.recordUsage.useMutation({
+    onSuccess: () => toast.success("使用結果を記録しました"),
+  });
+
+  const handleSearch = () => {
+    setQueryEnabled(true);
+    recommendQuery.refetch();
+  };
+
+  const handleCopy = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast.success("SKILL.mdをクリップボードにコピーしました");
+  };
+
+  const taskTypes = [
+    { value: "general", label: "一般" },
+    { value: "feature", label: "機能開発" },
+    { value: "bugfix", label: "バグ修正" },
+    { value: "refactor", label: "リファクタリング" },
+    { value: "review", label: "コードレビュー" },
+    { value: "test", label: "テスト" },
+  ] as const;
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <Card className="bg-emerald-950/30 border-emerald-500/20">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-white flex items-center gap-2 text-base">
+            <Sparkles className="w-5 h-5 text-emerald-400" />
+            スマート起動 — プロジェクトに最適なスキルを自動選択
+          </CardTitle>
+          <CardDescription className="text-white/50 text-xs">
+            プロジェクトのキーワード・言語・タスク種別を入力すると、BM25スコアリングで最適なスキルをランク付け、SKILL.mdを生成します。
+            生成した SKILL.md を Claude Code の <code className="bg-white/10 px-1 rounded">.claude/skills/</code> に配置することで Agent Team が自動的に活用します。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Filters */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-white/70 text-xs mb-1 block">キーワード (カンマ区切り)</Label>
+              <Input
+                value={keywords}
+                onChange={(e) => setKeywords(e.target.value)}
+                placeholder="react, typescript, api..."
+                className="bg-white/5 border-white/10 text-white text-sm h-8"
+              />
+            </div>
+            <div>
+              <Label className="text-white/70 text-xs mb-1 block">言語 / フレームワーク</Label>
+              <div className="flex gap-2">
+                <Input value={language} onChange={(e) => setLanguage(e.target.value)} placeholder="TypeScript" className="bg-white/5 border-white/10 text-white text-sm h-8" />
+                <Input value={framework} onChange={(e) => setFramework(e.target.value)} placeholder="React" className="bg-white/5 border-white/10 text-white text-sm h-8" />
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 flex-wrap">
+            <Label className="text-white/70 text-xs">タスク種別:</Label>
+            {taskTypes.map((t) => (
+              <button
+                key={t.value}
+                onClick={() => setTaskType(t.value)}
+                className={`px-3 py-1 rounded-full text-xs border transition-all ${
+                  taskType === t.value
+                    ? "bg-emerald-600 border-emerald-500 text-white"
+                    : "bg-white/5 border-white/10 text-white/60 hover:bg-white/10"
+                }`}
+              >{t.label}</button>
+            ))}
+            <div className="ml-auto flex items-center gap-2">
+              <Label className="text-white/70 text-xs">Top</Label>
+              <select
+                value={topN}
+                onChange={(e) => setTopN(Number(e.target.value))}
+                className="bg-white/5 border border-white/10 text-white text-xs rounded px-2 py-1"
+              >
+                {[3, 5, 10].map((n) => <option key={n} value={n} className="bg-gray-900">{n}</option>)}
+              </select>
+            </div>
+          </div>
+          <Button
+            onClick={handleSearch}
+            disabled={recommendQuery.isFetching}
+            className="bg-emerald-600 hover:bg-emerald-500 text-white gap-2 w-full"
+          >
+            {recommendQuery.isFetching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+            最適スキルを検索
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Results */}
+      {recommendQuery.data && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-white/70 text-sm">
+              {recommendQuery.data.total} 件中上位 <span className="text-emerald-400 font-bold">{recommendQuery.data.results.length}</span> 件を推奨
+            </p>
+            <Badge variant="outline" className="text-emerald-400 border-emerald-500/30 text-xs">
+              BM25 スコア順
+            </Badge>
+          </div>
+          {recommendQuery.data.results.map((skill, idx) => {
+            const tags = (() => { try { return JSON.parse(skill.tags ?? "[]") as string[]; } catch { return []; } })();
+            return (
+              <Card
+                key={skill.id}
+                className={`border transition-all cursor-pointer ${
+                  selectedSkillId === skill.id
+                    ? "bg-emerald-950/40 border-emerald-500/50"
+                    : "bg-white/3 border-white/10 hover:border-white/20"
+                }`}
+                onClick={() => setSelectedSkillId(selectedSkillId === skill.id ? null : skill.id)}
+              >
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="flex-shrink-0 w-7 h-7 rounded-full bg-emerald-600/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 text-xs font-bold">#{idx + 1}</span>
+                      <div className="min-w-0">
+                        <p className="text-white font-medium text-sm truncate">{skill.name}</p>
+                        <p className="text-white/50 text-xs truncate">{skill.description}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <Badge variant="outline" className="text-emerald-300 border-emerald-500/30 text-xs">
+                        <Star className="w-3 h-3 mr-1" />{skill.relevanceScore}
+                      </Badge>
+                      <ChevronRight className={`w-4 h-4 text-white/40 transition-transform ${selectedSkillId === skill.id ? "rotate-90" : ""}`} />
+                    </div>
+                  </div>
+                  {tags.length > 0 && (
+                    <div className="flex gap-1 flex-wrap mt-2 ml-10">
+                      {tags.slice(0, 5).map((t) => <TagBadge key={t} tag={t} />)}
+                    </div>
+                  )}
+
+                  {/* Expanded SKILL.md preview */}
+                  {selectedSkillId === skill.id && (
+                    <div className="mt-4 ml-10 space-y-3">
+                      {skillMdQuery.isLoading ? (
+                        <div className="flex items-center gap-2 text-white/50 text-xs"><Loader2 className="w-3 h-3 animate-spin" />SKILL.mdを生成中...</div>
+                      ) : skillMdQuery.data ? (
+                        <>
+                          <div className="bg-black/30 rounded-lg p-3 border border-white/10">
+                            <pre className="text-xs text-white/80 whitespace-pre-wrap font-mono max-h-64 overflow-y-auto">{skillMdQuery.data.skillMd}</pre>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              onClick={(e) => { e.stopPropagation(); handleCopy(skillMdQuery.data!.skillMd); }}
+                              className="bg-emerald-600 hover:bg-emerald-500 text-white gap-2 text-xs h-7"
+                            >
+                              <ClipboardCopy className="w-3 h-3" />SKILL.mdをコピー
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const blob = new Blob([skillMdQuery.data!.skillMd], { type: "text/markdown" });
+                                const url = URL.createObjectURL(blob);
+                                const a = document.createElement("a");
+                                a.href = url; a.download = "SKILL.md"; a.click();
+                                URL.revokeObjectURL(url);
+                                toast.success("SKILL.mdをダウンロードしました");
+                              }}
+                              className="border-white/20 text-white/70 hover:text-white gap-2 text-xs h-7"
+                            >
+                              <Download className="w-3 h-3" />ダウンロード
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                recordUsage.mutate({ skillId: skill.id, taskType, outcome: "success", effectivenessScore: 80 });
+                              }}
+                              className="border-white/20 text-white/70 hover:text-white gap-2 text-xs h-7 ml-auto"
+                            >
+                              <CheckCircle2 className="w-3 h-3" />有効だった
+                            </Button>
+                          </div>
+                          <div className="bg-emerald-950/30 rounded p-3 border border-emerald-500/20 text-xs text-white/60">
+                            <p className="font-medium text-emerald-400 mb-1">使い方</p>
+                            <p>1. 「SKILL.mdをコピー」または「ダウンロード」で内容を取得</p>
+                            <p>2. プロジェクトの <code className="bg-white/10 px-1 rounded">.claude/skills/{skill.name.replace(/\s+/g, "-").toLowerCase()}/SKILL.md</code> に配置</p>
+                            <p>3. Claude Code でタスクを開始—スキルが自動的に読み込まれます</p>
+                          </div>
+                        </>
+                      ) : null}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {recommendQuery.data?.results.length === 0 && (
+        <div className="text-center py-12 text-white/40">
+          <Sparkles className="w-10 h-10 mx-auto mb-3 opacity-30" />
+          <p>スコアが上位のスキルが見つかりませんでした。キーワードを変えて再検索してください。</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── MCP Config Tab ───────────────────────────────────────────────────────────
+function McpConfigTab() {
+  const [serverUrl, setServerUrl] = useState("");
+  const [includeApiKey, setIncludeApiKey] = useState(false);
+  const [result, setResult] = useState<{ configJson: string; orchestratorSkillMd: string } | null>(null);
+
+  const generateConfig = trpc.claude.generateMcpConfig.useMutation({
+    onSuccess: (data) => {
+      setResult(data);
+      toast.success("MCP設定を生成しました");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const handleCopy = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    toast.success(`${label}をクリップボードにコピーしました`);
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card className="bg-rose-950/20 border-rose-500/20">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-white flex items-center gap-2 text-base">
+            <Settings2 className="w-5 h-5 text-rose-400" />
+            MCP設定生成 — OSM を Claude Code の Agent Team に接続
+          </CardTitle>
+          <CardDescription className="text-white/50 text-xs">
+            OSM MCPサーバーを Claude Code に登録するための <code className="bg-white/10 px-1 rounded">~/.claude.json</code> 設定と、
+            スキル自動選択を行うオーケストレーター SKILL.md を生成します。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <Label className="text-white/70 text-xs mb-1 block">OSMインスタンスURL (公開デプロイ後のURL)</Label>
+            <Input
+              value={serverUrl}
+              onChange={(e) => setServerUrl(e.target.value)}
+              placeholder="https://your-osm.manus.space"
+              className="bg-white/5 border-white/10 text-white text-sm h-8"
+            />
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={includeApiKey}
+              onChange={(e) => setIncludeApiKey(e.target.checked)}
+              className="rounded"
+            />
+            <span className="text-white/70 text-xs">APIキープレースホルダーを含める</span>
+          </label>
+          <Button
+            onClick={() => generateConfig.mutate({ serverUrl: serverUrl || undefined, includeApiKey })}
+            disabled={generateConfig.isPending}
+            className="bg-rose-600 hover:bg-rose-500 text-white gap-2 w-full"
+          >
+            {generateConfig.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Settings2 className="w-4 h-4" />}
+            MCP設定を生成
+          </Button>
+        </CardContent>
+      </Card>
+
+      {result && (
+        <div className="space-y-4">
+          {/* ~/.claude.json snippet */}
+          <Card className="bg-white/3 border-white/10">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-white text-sm flex items-center gap-2">
+                  <FileCode2 className="w-4 h-4 text-rose-400" />
+                  ~/.claude.json に追加する設定
+                </CardTitle>
+                <Button size="sm" variant="outline" onClick={() => handleCopy(result.configJson, "MCP設定")} className="border-white/20 text-white/70 hover:text-white gap-1 text-xs h-7">
+                  <ClipboardCopy className="w-3 h-3" />コピー
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <pre className="text-xs text-white/80 bg-black/30 rounded p-3 overflow-x-auto font-mono">{result.configJson}</pre>
+            </CardContent>
+          </Card>
+
+          {/* Orchestrator SKILL.md */}
+          <Card className="bg-white/3 border-white/10">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-white text-sm flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-emerald-400" />
+                  オーケストレーター SKILL.md
+                </CardTitle>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={() => handleCopy(result.orchestratorSkillMd, "SKILL.md")} className="border-white/20 text-white/70 hover:text-white gap-1 text-xs h-7">
+                    <ClipboardCopy className="w-3 h-3" />コピー
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => {
+                    const blob = new Blob([result.orchestratorSkillMd], { type: "text/markdown" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a"); a.href = url; a.download = "SKILL.md"; a.click();
+                    URL.revokeObjectURL(url);
+                    toast.success("SKILL.mdをダウンロードしました");
+                  }} className="border-white/20 text-white/70 hover:text-white gap-1 text-xs h-7">
+                    <Download className="w-3 h-3" />ダウンロード
+                  </Button>
+                </div>
+              </div>
+              <CardDescription className="text-white/40 text-xs mt-1">
+                .claude/skills/auto-skill-team/SKILL.md に配置することで、Claude Code がタスク開始時に自動的にスキルを選択・注入します。
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <pre className="text-xs text-white/80 bg-black/30 rounded p-3 overflow-x-auto font-mono max-h-80 overflow-y-auto">{result.orchestratorSkillMd}</pre>
+            </CardContent>
+          </Card>
+
+          {/* Setup guide */}
+          <Card className="bg-emerald-950/20 border-emerald-500/20">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-white text-sm flex items-center gap-2">
+                <Terminal className="w-4 h-4 text-emerald-400" />
+                セットアップ手順
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-xs text-white/60">
+              <div className="flex items-start gap-2">
+                <span className="flex-shrink-0 w-5 h-5 rounded-full bg-emerald-600/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-bold">1</span>
+                <div>
+                  <p className="text-white/80 font-medium">設定を ~/.claude.json にマージ</p>
+                  <code className="bg-black/30 px-2 py-0.5 rounded block mt-1">{'cat ~/.claude.json | jq \'. * {"mcpServers": .mcpServers}\' > /tmp/merged.json && mv /tmp/merged.json ~/.claude.json'}</code>
+                </div>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="flex-shrink-0 w-5 h-5 rounded-full bg-emerald-600/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-bold">2</span>
+                <div>
+                  <p className="text-white/80 font-medium">オーケストレーター SKILL.md を配置</p>
+                  <code className="bg-black/30 px-2 py-0.5 rounded block mt-1">mkdir -p .claude/skills/auto-skill-team && cp SKILL.md .claude/skills/auto-skill-team/</code>
+                </div>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="flex-shrink-0 w-5 h-5 rounded-full bg-emerald-600/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-bold">3</span>
+                <div>
+                  <p className="text-white/80 font-medium">Claude Code でタスクを開始</p>
+                  <code className="bg-black/30 px-2 py-0.5 rounded block mt-1">claude "/auto-skill-team feature: ユーザー認証機能を実装"</code>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ClaudeIntegration() {
   return (
     <DashboardLayout>
@@ -723,6 +1106,12 @@ export default function ClaudeIntegration() {
             <TabsTrigger value="single" className="data-[state=active]:bg-indigo-600 data-[state=active]:text-white text-white/60 gap-2 text-xs">
               <Upload className="w-3.5 h-3.5" />単体インポート
             </TabsTrigger>
+            <TabsTrigger value="smart" className="data-[state=active]:bg-emerald-600 data-[state=active]:text-white text-white/60 gap-2 text-xs">
+              <Sparkles className="w-3.5 h-3.5" />スマート起動
+            </TabsTrigger>
+            <TabsTrigger value="mcp" className="data-[state=active]:bg-rose-600 data-[state=active]:text-white text-white/60 gap-2 text-xs">
+              <Settings2 className="w-3.5 h-3.5" />MCP設定
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="github"><GithubFetchTab /></TabsContent>
@@ -730,6 +1119,8 @@ export default function ClaudeIntegration() {
           <TabsContent value="diff"><DiffImportTab /></TabsContent>
           <TabsContent value="tags"><AutoTagTab /></TabsContent>
           <TabsContent value="single"><SingleImportTab /></TabsContent>
+          <TabsContent value="smart"><SmartLaunchTab /></TabsContent>
+          <TabsContent value="mcp"><McpConfigTab /></TabsContent>
         </Tabs>
       </div>
     </DashboardLayout>

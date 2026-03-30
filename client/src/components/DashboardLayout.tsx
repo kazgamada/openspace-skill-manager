@@ -38,6 +38,7 @@ import {
   Cpu,
   UserCircle,
   Zap,
+  Sparkles,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -51,6 +52,7 @@ const coreMenuItems = [
   { icon: Brain,           label: "マイスキル",     path: "/skills" },
   { icon: Store,           label: "スキル広場",     path: "/community" },
   { icon: GitBranch,       label: "スキル系譜",     path: "/genealogy" },
+  { icon: Sparkles,        label: "Agent連携",   path: "/claude" },
 ];
 
 // ユーザー用「設定」サブメニュー
