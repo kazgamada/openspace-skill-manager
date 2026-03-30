@@ -433,6 +433,56 @@ const storageRouter = router({
 });
 
 // ─────────────────────────────────────────────
+// SKILL.md parser helper
+// ─────────────────────────────────────────────
+function parseSkillMd(raw: string): {
+  name: string;
+  description: string;
+  category: string;
+  tags: string[];
+  content: string;
+  frontmatter: Record<string, string>;
+} {
+  const traceId = Math.random().toString(36).slice(2, 8).toUpperCase();
+  try {
+    // Extract YAML frontmatter between --- markers
+    const fmMatch = raw.match(/^---\s*\n([\s\S]*?)\n---\s*\n([\s\S]*)$/m);
+    const frontmatter: Record<string, string> = {};
+    let content = raw.trim();
+
+    if (fmMatch) {
+      const yamlBlock = fmMatch[1];
+      content = fmMatch[2].trim();
+      // Simple YAML key: value parser (no nested objects)
+      for (const line of yamlBlock.split("\n")) {
+        const m = line.match(/^([\w-]+):\s*(.*)$/);
+        if (m) frontmatter[m[1].trim()] = m[2].trim().replace(/^["']|["']$/g, "");
+      }
+    }
+
+    const name = frontmatter["name"] ?? "untitled-skill";
+    const description = frontmatter["description"] ?? content.split("\n")[0]?.slice(0, 200) ?? "";
+    // Infer category from description keywords
+    const catMap: [RegExp, string][] = [
+      [/code|debug|test|lint|format/i, "development"],
+      [/deploy|build|ci|cd|docker/i, "devops"],
+      [/write|document|explain|summarize/i, "writing"],
+      [/search|fetch|api|http/i, "integration"],
+      [/analyze|review|check|audit/i, "analysis"],
+    ];
+    const category = catMap.find(([re]) => re.test(description))?.[1] ?? "general";
+    // Extract tags from allowed-tools or description words
+    const tagsRaw = frontmatter["allowed-tools"] ?? "";
+    const tags = tagsRaw ? tagsRaw.split(/[,\s]+/).filter(Boolean) : [];
+
+    return { name, description, category, tags, content, frontmatter };
+  } catch (err) {
+    console.error(`[SKILL.md parser][${traceId}] Parse error:`, err);
+    return { name: "untitled-skill", description: "", category: "general", tags: [], content: raw, frontmatter: {} };
+  }
+}
+
+// ─────────────────────────────────────────────
 // Claude router
 // ─────────────────────────────────────────────
 const claudeRouter = router({
@@ -440,6 +490,169 @@ const claudeRouter = router({
     .input(z.object({ limit: z.number().default(50) }))
     .query(async ({ input }) => {
       return getRecentLogs(input.limit);
+    }),
+
+  /** Parse a pasted SKILL.md text and return preview data without saving */
+  previewSkillMd: protectedProcedure
+    .input(z.object({ raw: z.string().min(1).max(100_000) }))
+    .mutation(async ({ input }) => {
+      const parsed = parseSkillMd(input.raw);
+      return { success: true, preview: parsed };
+    }),
+
+  /** Import one SKILL.md text into the user's skill library */
+  importSkillMd: protectedProcedure
+    .input(
+      z.object({
+        raw: z.string().min(1).max(100_000),
+        overrideName: z.string().optional(),
+        overrideDescription: z.string().optional(),
+        overrideCategory: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const parsed = parseSkillMd(input.raw);
+      const skillId = nanoid();
+      const versionId = nanoid();
+      const now = new Date();
+
+      const name = input.overrideName ?? parsed.name;
+      const description = input.overrideDescription ?? parsed.description;
+      const category = input.overrideCategory ?? parsed.category;
+
+      await createSkill({
+        id: skillId,
+        name,
+        description,
+        category,
+        authorId: ctx.user.id,
+        isLocal: true,
+        isPublic: false,
+        tags: JSON.stringify(parsed.tags),
+        currentVersionId: versionId,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      await createSkillVersion({
+        id: versionId,
+        skillId,
+        version: "v1.0",
+        evolutionType: "create",
+        triggerType: "manual",
+        qualityScore: 80,
+        successRate: 100,
+        codeContent: input.raw,
+        changeLog: `Claude Codeからインポート: ${name}`,
+        createdAt: now,
+      });
+
+      return { success: true, skillId, name };
+    }),
+
+  /** Import multiple SKILL.md files at once (batch) */
+  importBatch: protectedProcedure
+    .input(
+      z.object({
+        skills: z.array(
+          z.object({
+            raw: z.string().min(1).max(100_000),
+            filename: z.string().optional(),
+          })
+        ).min(1).max(50),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const results: { name: string; skillId: string; success: boolean; error?: string }[] = [];
+
+      for (const item of input.skills) {
+        try {
+          const parsed = parseSkillMd(item.raw);
+          const skillId = nanoid();
+          const versionId = nanoid();
+          const now = new Date();
+
+          // Use filename as fallback name if frontmatter name is missing
+          const name = parsed.name !== "untitled-skill"
+            ? parsed.name
+            : (() => {
+                // Normalize path separators (Windows \ → Unix /) and strip SKILL.md suffix
+                const normalized = (item.filename ?? "").replace(/\\/g, "/").replace(/\/SKILL\.md$/i, "").replace(/\.md$/i, "");
+                return normalized.split("/").filter(Boolean).pop() ?? "untitled-skill";
+              })();
+
+          await createSkill({
+            id: skillId,
+            name,
+            description: parsed.description,
+            category: parsed.category,
+            authorId: ctx.user.id,
+            isLocal: true,
+            isPublic: false,
+            tags: JSON.stringify(parsed.tags),
+            currentVersionId: versionId,
+            createdAt: now,
+            updatedAt: now,
+          });
+
+          await createSkillVersion({
+            id: versionId,
+            skillId,
+            version: "v1.0",
+            evolutionType: "create",
+            triggerType: "manual",
+            qualityScore: 80,
+            successRate: 100,
+            codeContent: item.raw,
+            changeLog: `Claude Codeから一括インポート: ${name}`,
+            createdAt: now,
+          });
+
+          results.push({ name, skillId, success: true });
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          console.error(`[claude.importBatch] Failed for ${item.filename ?? "unknown"}:`, errMsg);
+          results.push({ name: item.filename ?? "unknown", skillId: "", success: false, error: errMsg });
+        }
+      }
+
+      const succeeded = results.filter((r) => r.success).length;
+      return { success: true, total: results.length, succeeded, failed: results.length - succeeded, results };
+    }),
+
+  /** Parse a .mcp.json or ~/.claude.json snippet and return server list */
+  parseMcpConfig: protectedProcedure
+    .input(z.object({ raw: z.string().min(1).max(200_000) }))
+    .mutation(async ({ input }) => {
+      const traceId = Math.random().toString(36).slice(2, 8).toUpperCase();
+      try {
+        const parsed = JSON.parse(input.raw);
+        // Support both .mcp.json format and ~/.claude.json format
+        const mcpServers: Record<string, unknown> =
+          parsed.mcpServers ??
+          parsed.mcp?.servers ??
+          {};
+
+        const servers = Object.entries(mcpServers).map(([serverName, cfg]) => {
+          const c = cfg as Record<string, unknown>;
+          return {
+            name: serverName,
+            transport: c.url ? "http" : c.command ? "stdio" : "unknown",
+            command: c.command as string | undefined,
+            args: c.args as string[] | undefined,
+            url: c.url as string | undefined,
+            envKeys: c.env ? Object.keys(c.env as object) : [],
+          };
+        });
+
+        return { success: true, servers, count: servers.length };
+      } catch (err) {
+        console.error(`[claude.parseMcpConfig][${traceId}] Parse error:`, err);
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `JSONの解析に失敗しました: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      }
     }),
 });
 

@@ -38,3 +38,13 @@
 - [x] Vitestテスト: auth, admin権限チェック, RBAC, public/protected/admin手続きテスト（17テスト全通過）
 - [x] シードデータ投入機能（管理者パネルから実行可能）
 - [x] チェックポイント保存
+
+## Claude Code スキル自動取得機能
+- [x] server/routers.ts: claude.previewSkillMd（SKILL.md解析・プレビュー）ルーター追加
+- [x] server/routers.ts: claude.importSkillMd（SKILL.md単体インポート）ルーター追加
+- [x] server/routers.ts: claude.importBatch（複数SKILL.md一括インポート）ルーター追加
+- [x] server/routers.ts: claude.parseMcpConfig（.mcp.json / ~/.claude.json のMCP設定解析）ルーター追加
+- [x] ClaudeIntegration.tsx: スキルインポートタブ（ファイル貼り付け・ファイルアップロード）UI実装
+- [x] ClaudeIntegration.tsx: インポートプレビューモーダル（name/description/category編集・確認）実装
+- [x] ClaudeIntegration.tsx: 一括インポートタブ（複数ファイルドラッグ＆ドロップ）実装
+- [x] ClaudeIntegration.tsx: MCP設定パーサーモーダル（サーバー一覧表示）実装
