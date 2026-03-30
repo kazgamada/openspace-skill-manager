@@ -76,7 +76,19 @@
 - [x] drizzle/schema.ts: user_settingsテーブルにintegrations JSONカラム追加・マイグレーション完了
 
 ## サイドバー第2階層ナビ再構成
-- [ ] DashboardLayout.tsx: サイドバーを第2階層構成に書き直し（ユーザー用「設定→連携」、管理者用「管理者パネル→アカウント・ユーザー管理・システム」）
-- [ ] AdminSettings.tsx: 上部タブを廃止しURLパラメーターでサイドバーと連動
-- [ ] UserSettings.tsx: ユーザー用設定ページ（連携タブのみ）を新規作成
-- [ ] App.tsx: /settings, /admin?tab=account, /admin?tab=users, /admin?tab=system のルート整理
+- [x] DashboardLayout.tsx: サイドバーを第2階層構成に書き直し（ユーザー用「設定→連携」、管理者用「管理者パネル→アカウント・ユーザー管理・システム」）
+- [x] AdminSettings.tsx: 上部タブを廃止しURLパス連動型（/admin/account, /admin/users, /admin/system）に書き直し
+- [x] UserSettings.tsx: ユーザー用設定ページ（連携タブのみ）を新規作成
+- [x] App.tsx: /settings, /settings/integrations, /admin/account, /admin/users, /admin/system のルート整理完了
+
+## バグ修正・未実装API実装
+- [x] バグ修正: UserSettings.tsx の getIntegrations 戻り値型不一致クラッシュ修正（配列形式で返すように変更）
+- [x] スキル管理API: skills.revert（バージョンロールバック）実装
+- [x] スキル管理API: skills.upload（コミュニティ公開）実装
+- [x] Community.tsx: getIntegrations 配列形式対応（githubConnected判定修正）
+- [x] Genealogy.tsx: getIntegrations 配列形式対応（claudeConnected判定修正）
+- [x] MySkills.tsx: スキル広場に公開ボタンをドロップダウンメニューに追加
+- [x] Vitest 28テスト全通過（getIntegrations契約テスト追加）
+- [x] TSエラー 0件確認
+- [ ] コミュニティAPI: community.search（BM25+Embedding風）
+- [ ] WebSocket: /ws/evolution-events リアルタイム通知（将来実装）

@@ -185,7 +185,9 @@ export default function Genealogy() {
     { enabled: !!selectedSkillId }
   );
   const { data: integrations } = trpc.settings.getIntegrations.useQuery();
-  const claudeConnected = (integrations as { claude?: { connected?: boolean } } | undefined)?.claude?.connected === true;
+  const claudeConnected = Array.isArray(integrations)
+    ? integrations.some((i) => i.service === "claude" && i.connected)
+    : false;
 
   const skills = skillsQuery.data ?? [];
   const genealogy = genealogyQuery.data;

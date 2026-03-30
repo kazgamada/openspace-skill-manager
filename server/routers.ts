@@ -234,6 +234,81 @@ const skillsRouter = router({
       return { versionId: newVersionId, version: newVersion };
     }),
 
+  /** Revert a skill to a specific version */
+  revert: protectedProcedure
+    .input(z.object({ skillId: z.string(), versionId: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const skill = await getSkillById(input.skillId);
+      if (!skill) throw new TRPCError({ code: "NOT_FOUND", message: "スキルが見つかりません" });
+      if (skill.authorId !== ctx.user.id && ctx.user.role !== "admin") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "アクセス権限がありません" });
+      }
+      const targetVersion = await getVersionById(input.versionId);
+      if (!targetVersion || targetVersion.skillId !== input.skillId) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "バージョンが見つかりません" });
+      }
+
+      // Create a new version that is a copy of the target version (rollback)
+      const versions = await getVersionsBySkill(input.skillId);
+      const latest = versions[0];
+      const newVersionId = nanoid();
+      const newVersion = latest ? bumpVersion(latest.version) : "v1.1";
+
+      await createSkillVersion({
+        id: newVersionId,
+        skillId: input.skillId,
+        version: newVersion,
+        parentId: latest?.id,
+        evolutionType: "fix",
+        triggerType: "manual",
+        qualityScore: targetVersion.qualityScore ?? 50,
+        successRate: targetVersion.successRate ?? 0,
+        codeContent: targetVersion.codeContent,
+        changeLog: `ロールバック: ${targetVersion.version} → ${newVersion}`,
+      });
+
+      await updateSkill(input.skillId, { currentVersionId: newVersionId });
+      return { success: true, versionId: newVersionId, version: newVersion };
+    }),
+
+  /** Upload skill to cloud (community) */
+  upload: protectedProcedure
+    .input(z.object({
+      skillId: z.string(),
+      makePublic: z.boolean().default(true),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const skill = await getSkillById(input.skillId);
+      if (!skill) throw new TRPCError({ code: "NOT_FOUND", message: "スキルが見つかりません" });
+      if (skill.authorId !== ctx.user.id && ctx.user.role !== "admin") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "アクセス権限がありません" });
+      }
+
+      const versions = await getVersionsBySkill(input.skillId);
+      const latest = versions[0];
+
+      // Upsert to community_skills
+      const communityId = nanoid();
+      await upsertCommunitySkill({
+        id: communityId,
+        name: skill.name,
+        description: skill.description ?? "",
+        category: skill.category ?? "general",
+        tags: skill.tags ?? "[]",
+        author: ctx.user.name ?? ctx.user.email ?? "unknown",
+        qualityScore: latest?.qualityScore ?? 50,
+        codePreview: (latest?.codeContent ?? "").slice(0, 500),
+        latestVersion: latest?.version ?? "v1.0",
+      });
+
+      // Make skill public
+      if (input.makePublic) {
+        await updateSkill(input.skillId, { isPublic: true });
+      }
+
+      return { success: true, communityId };
+    }),
+
   logs: protectedProcedure
     .input(z.object({ skillId: z.string() }))
     .query(async ({ input }) => {
@@ -1044,9 +1119,16 @@ const settingsRouter = router({
   // ── Integrations ──
   getIntegrations: protectedProcedure.query(async ({ ctx }) => {
     const s = await getUserSettingsByUserId(ctx.user.id);
-    if (!s?.integrations) return {};
-    try { return JSON.parse(s.integrations) as Record<string, unknown>; }
-    catch { return {}; }
+    if (!s?.integrations) return [];
+    try {
+      const raw = JSON.parse(s.integrations) as Record<string, Record<string, unknown>>;
+      return Object.entries(raw).map(([service, cfg]) => ({
+        service,
+        connected: Boolean(cfg.connected),
+        testedAt: (cfg.lastTestedAt as string | null) ?? null,
+        config: cfg,
+      }));
+    } catch { return []; }
   }),
 
   saveIntegration: protectedProcedure

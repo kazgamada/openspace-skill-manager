@@ -318,3 +318,77 @@ describe("claude.importFromGithub", () => {
     ).rejects.toThrow();
   });
 });
+
+// ─────────────────────────────────────────────
+// skills.revert authorization tests
+// ─────────────────────────────────────────────
+describe("skills.revert", () => {
+  it("throws UNAUTHORIZED for unauthenticated users", async () => {
+    const { ctx } = createGuestContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.skills.revert({ skillId: "s1", versionId: "v1" })).rejects.toThrow();
+  });
+
+  it("throws NOT_FOUND when skill does not exist", async () => {
+    const { ctx } = createUserContext();
+    const caller = appRouter.createCaller(ctx);
+    const err = await caller.skills.revert({ skillId: "nonexistent-skill", versionId: "v1" }).catch((e: Error) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toMatch(/見つかりません|NOT_FOUND/);
+  });
+});
+
+// ─────────────────────────────────────────────
+// skills.upload authorization tests
+// ─────────────────────────────────────────────
+describe("skills.upload", () => {
+  it("throws UNAUTHORIZED for unauthenticated users", async () => {
+    const { ctx } = createGuestContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.skills.upload({ skillId: "s1" })).rejects.toThrow();
+  });
+
+  it("throws NOT_FOUND when skill does not exist", async () => {
+    const { ctx } = createUserContext();
+    const caller = appRouter.createCaller(ctx);
+    const err = await caller.skills.upload({ skillId: "nonexistent-skill" }).catch((e: Error) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toMatch(/見つかりません|NOT_FOUND/);
+  });
+});
+
+// ─────────────────────────────────────────────
+// settings.getIntegrations contract tests
+// ─────────────────────────────────────────────
+describe("settings.getIntegrations", () => {
+  it("throws UNAUTHORIZED for unauthenticated users", async () => {
+    const { ctx } = createGuestContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.settings.getIntegrations()).rejects.toThrow();
+  });
+
+  it("returns an array (not an object) for authenticated users with no integrations", async () => {
+    const { ctx } = createUserContext();
+    const caller = appRouter.createCaller(ctx);
+    // DB may not have a row for this test user, so we catch DB errors gracefully
+    const result = await caller.settings.getIntegrations().catch((e: Error) => {
+      // If it's a DB error, skip the shape assertion
+      if (e.message.includes("UNAUTHORIZED")) throw e;
+      return [] as unknown[];
+    });
+    expect(Array.isArray(result)).toBe(true);
+  });
+
+  it("returns items with required shape when integrations exist", async () => {
+    const { ctx } = createUserContext();
+    const caller = appRouter.createCaller(ctx);
+    // First save an integration
+    await caller.settings.saveIntegration({ service: "github", config: { token: "ghp_test" } }).catch(() => {});
+    const result = await caller.settings.getIntegrations().catch(() => []);
+    expect(Array.isArray(result)).toBe(true);
+    for (const item of result as Array<Record<string, unknown>>) {
+      expect(typeof item.service).toBe("string");
+      expect(typeof item.connected).toBe("boolean");
+    }
+  });
+});

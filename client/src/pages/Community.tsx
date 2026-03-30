@@ -34,7 +34,9 @@ export default function Community() {
   const utils = trpc.useUtils();
   const [, setLocation] = useLocation();
   const { data: integrations } = trpc.settings.getIntegrations.useQuery();
-  const githubConnected = (integrations as { github?: { connected?: boolean } } | undefined)?.github?.connected === true;
+  const githubConnected = Array.isArray(integrations)
+    ? integrations.some((i) => i.service === "github" && i.connected)
+    : false;
 
   const communityQuery = trpc.community.list.useQuery({
     search: search || undefined,

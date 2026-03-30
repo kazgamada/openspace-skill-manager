@@ -119,7 +119,7 @@ function CreateSkillDialog({ onCreated }: { onCreated: () => void }) {
   );
 }
 
-// ─── Skills List Tab ──────────────────────────────────────────────────────────
+// ─── Skills List Tab ─────────────────────────────────────────────
 function SkillsListTab() {
   const [search, setSearch] = useState("");
   const [, setLocation] = useLocation();
@@ -128,6 +128,10 @@ function SkillsListTab() {
   const skillsQuery = trpc.skills.list.useQuery();
   const deleteMutation = trpc.skills.delete.useMutation({
     onSuccess: () => { toast.success("スキルを削除しました"); utils.skills.list.invalidate(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const uploadMutation = trpc.skills.upload.useMutation({
+    onSuccess: () => { toast.success("スキルをコミュニティに公開しました"); utils.skills.list.invalidate(); utils.community.list.invalidate(); },
     onError: (e) => toast.error(e.message),
   });
 
@@ -189,6 +193,14 @@ function SkillsListTab() {
                         <DropdownMenuItem onClick={() => setLocation(`/genealogy/${skill.id}`)}>
                           <GitBranch className="mr-2 h-3.5 w-3.5" />系譜を見る
                         </DropdownMenuItem>
+                        {!skill.isPublic && (
+                          <DropdownMenuItem
+                            onClick={() => { if (confirm(`「${skill.name}」をコミュニティに公開しますか？`)) uploadMutation.mutate({ skillId: skill.id }); }}
+                            disabled={uploadMutation.isPending}
+                          >
+                            <Globe className="mr-2 h-3.5 w-3.5" />スキル広場に公開
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem onClick={() => { if (confirm(`「${skill.name}」を削除しますか？`)) deleteMutation.mutate({ id: skill.id }); }} className="text-destructive focus:text-destructive">
                           <Trash2 className="mr-2 h-3.5 w-3.5" />削除
                         </DropdownMenuItem>
