@@ -53,6 +53,204 @@ import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 
+// ─── マニュアルテキスト定義 ──────────────────────────────────────────────────
+
+interface ManualInfo {
+  title: string;
+  description: string;
+  tips?: string[];
+}
+
+const MANUAL_MAP: Record<string, ManualInfo> = {
+  "/dashboard": {
+    title: "ダッシュボード",
+    description: "スキル全体の状況を一覧で把握できるホーム画面です。スキル数・ヘルス状態・最近の活動・推薦スキルなどを確認できます。",
+    tips: ["スキルの品質スコアが低い場合はアラートが表示されます", "推薦スキルカードから新しいスキルを発見できます"],
+  },
+  "/skills": {
+    title: "マイスキル › スキル一覧",
+    description: "自分が登録・管理しているスキルの一覧です。スキルの作成・編集・削除・バージョン管理・スキル広場への公開ができます。",
+    tips: ["右上のレイアウト切り替えでリスト/タイル表示を変更できます", "スキルカードをクリックすると詳細・バージョン履歴を確認できます", "「＋新規スキル」ボタンで新しいスキルを作成できます"],
+  },
+  "/skills/health": {
+    title: "マイスキル › ヘルスモニター",
+    description: "各スキルの品質スコア・実行成功率・最終使用日などを監視します。スコアが低いスキルを特定して改善できます。",
+    tips: ["品質スコアは実行ログと手動評価から自動計算されます", "閾値を設定するとスコア低下時に通知が届きます"],
+  },
+  "/community": {
+    title: "スキル広場 › スキル一覧",
+    description: "コミュニティやGitHubリポジトリから同期されたスキルを検索・閲覧・インストールできます。",
+    tips: ["検索バーでスキル名・説明・タグを横断検索できます", "「インストール」でマイスキルに追加できます", "「New」バッジは直近7日以内に追加されたスキルです"],
+  },
+  "/community/sources": {
+    title: "スキル広場 › ソース管理",
+    description: "スキルの自動同期元となるGitHubリポジトリを管理します。登録したリポジトリから定期的にSKILL.mdを取得します。",
+    tips: ["「＋ソース追加」でGitHubリポジトリURLを登録できます", "自動同期の間隔（時間）を設定できます", "「手動同期」で即時に最新スキルを取得できます"],
+  },
+  "/genealogy": {
+    title: "スキル系譜",
+    description: "スキルの派生・継承関係をDAGグラフで可視化します。どのスキルがどのスキルから派生したかを追跡できます。",
+    tips: ["ノードをクリックするとスキル詳細が表示されます", "ズームイン/アウトでグラフを拡大縮小できます"],
+  },
+  "/claude/github": {
+    title: "Agent連携 › GitHub取得",
+    description: "GitHubの公開リポジトリからSKILL.mdファイルを自動検出・一括インポートします。人気リポジトリのクイック選択も利用できます。",
+    tips: ["リポジトリURLを入力してSKILL.md一覧を取得できます", "チェックボックスで複数スキルを選択して一括インポートできます"],
+  },
+  "/claude/merge": {
+    title: "Agent連携 › AIマージ",
+    description: "複数のSKILL.mdをAI（LLM）が分析し、重複を排除しながら品質の高い1つのスキルに統合します。",
+    tips: ["マージしたいSKILL.mdのテキストを複数貼り付けてください", "AIが自動でベストな組み合わせを生成します"],
+  },
+  "/claude/diff": {
+    title: "Agent連携 › 差分インポート",
+    description: "既存スキルの改良版を新しいバージョンとして登録します。バージョン履歴を保持しながらスキルを更新できます。",
+    tips: ["既存スキルを選択してから新しいSKILL.mdを貼り付けてください", "変更差分がバージョン履歴に記録されます"],
+  },
+  "/claude/tags": {
+    title: "Agent連携 › 自動タグ付け",
+    description: "SKILL.mdのallowed-toolsフィールドを解析して、適切なタグを自動生成・付与します。",
+    tips: ["SKILL.mdを貼り付けるとタグ候補が表示されます", "タグを確認・編集してからインポートできます"],
+  },
+  "/claude/single": {
+    title: "Agent連携 › 単体インポート",
+    description: "SKILL.mdのテキストを直接貼り付けてスキルを登録します。ファイルアップロードにも対応しています。",
+    tips: ["テキストエリアにSKILL.mdの内容を貼り付けてください", "インポート前にプレビューで内容を確認できます"],
+  },
+  "/claude/smart": {
+    title: "Agent連携 › スマート起動",
+    description: "キーワード・言語・タスク種別を入力すると、最適なスキルをBM25スコアリングで自動推薦します。",
+    tips: ["タスクの概要を自然言語で入力してください", "推薦されたスキルのSKILL.mdをコピーしてClaudeに渡せます"],
+  },
+  "/claude/mcp": {
+    title: "Agent連携 › MCP設定",
+    description: "Claude Codeで使用する~/.claude.json用のMCP設定JSONとオーケストレーターSKILL.mdを自動生成します。",
+    tips: ["生成された設定をコピーして~/.claude.jsonに追加してください", "オーケストレーターSKILL.mdをClaudeのスキルとして登録できます"],
+  },
+  "/settings/integrations": {
+    title: "設定 › 連携",
+    description: "Claude・GitHub・Google Driveなど外部サービスとの連携を設定します。APIキーやアクセストークンを安全に管理できます。",
+    tips: ["連携を設定するとスキルの自動同期や実行が有効になります", "接続テストで設定が正しいか確認できます"],
+  },
+  "/admin/account": {
+    title: "管理者パネル › アカウント",
+    description: "管理者自身のアカウント情報・プロフィール・通知設定を管理します。",
+    tips: ["メールアドレスはログインIDとして使用されます"],
+  },
+  "/admin/users": {
+    title: "管理者パネル › ユーザー管理",
+    description: "登録ユーザーの一覧表示・ロール変更・アカウント管理を行います。ユーザーをadminに昇格させることもできます。",
+    tips: ["ユーザーのroleをadminに変更すると管理者権限が付与されます", "シードデータの投入もここから実行できます"],
+  },
+  "/admin/system": {
+    title: "管理者パネル › システム",
+    description: "システム全体の設定・ログ監視・パフォーマンス管理を行います。スキル同期スケジューラーの状態も確認できます。",
+    tips: ["エラーログを確認して問題を早期発見できます", "自動同期スケジューラーの有効/無効を切り替えられます"],
+  },
+  "/settings": {
+    title: "設定",
+    description: "外部サービスとの連携設定を管理します。Claude・GitHub・Google Driveなどの接続情報を安全に保管できます。",
+    tips: ["連携を設定するとスキルの自動同期や実行が有効になります"],
+  },
+  "/admin": {
+    title: "管理者パネル",
+    description: "アカウント管理・ユーザー管理・システム設定など管理者専用の機能にアクセスできます。",
+    tips: ["管理者ロールを持つユーザーのみ表示されます"],
+  },
+};
+
+// ─── ホバーマニュアルパネル ──────────────────────────────────────────────────
+
+function ManualTooltip({
+  manual,
+  visible,
+  anchorRef,
+}: {
+  manual: ManualInfo;
+  visible: boolean;
+  anchorRef: React.RefObject<HTMLElement>;
+}) {
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!visible || !anchorRef.current) return;
+    const rect = anchorRef.current.getBoundingClientRect();
+    const panelWidth = 288; // w-72
+    const panelHeight = panelRef.current?.offsetHeight ?? 200;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    // 左側に配置するか右側に配置するか（サイドバー幅を考慮）
+    let left = rect.right + 8;
+    if (left + panelWidth > viewportWidth - 8) {
+      left = rect.left - panelWidth - 8;
+    }
+    if (left < 8) left = 8;
+    let top = rect.top;
+    if (top + panelHeight > viewportHeight - 16) {
+      top = viewportHeight - panelHeight - 16;
+    }
+    if (top < 8) top = 8;
+    setPos({ top, left });
+  }, [visible, anchorRef]);
+
+  if (!visible) return null;
+
+  return (
+    <div
+      ref={panelRef}
+      className="fixed z-[9999] w-72 rounded-xl border border-sidebar-border bg-popover/95 backdrop-blur-sm shadow-2xl p-4 pointer-events-none"
+      style={{ left: pos.left, top: pos.top }}
+    >
+      <p className="text-xs font-semibold text-primary mb-1.5">{manual.title}</p>
+      <p className="text-xs text-muted-foreground leading-relaxed mb-2">{manual.description}</p>
+      {manual.tips && manual.tips.length > 0 && (
+        <div className="space-y-1 border-t border-border/50 pt-2 mt-2">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60 mb-1">ヒント</p>
+          {manual.tips.map((tip, i) => (
+            <div key={i} className="flex gap-1.5 items-start">
+              <span className="text-primary text-[10px] mt-0.5 shrink-0">›</span>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">{tip}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── マニュアル付きメニューボタンラッパー ────────────────────────────────────
+
+function MenuItemWithManual({
+  path,
+  children,
+}: {
+  path: string;
+  children: React.ReactNode;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const manual = MANUAL_MAP[path];
+
+  if (!manual) return <>{children}</>;
+
+  return (
+    <div
+      ref={ref}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      className="relative"
+    >
+      {children}
+      <ManualTooltip
+        manual={manual}
+        visible={hovered}
+        anchorRef={ref as React.RefObject<HTMLElement>}
+      />
+    </div>
+  );
+}
+
 // ─── Navigation structure ───────────────────────────────────────────────────
 
 // マイスキルのサブメニュー
@@ -69,13 +267,13 @@ const communitySubItems = [
 
 // Agent連携のサブメニュー
 const claudeSubItems = [
-  { icon: Github,   label: "GitHub取得",   path: "/claude/github" },
-  { icon: GitMerge, label: "AIマージ",     path: "/claude/merge" },
-  { icon: GitBranch,label: "差分インポート", path: "/claude/diff" },
-  { icon: Tag,      label: "自動タグ付け", path: "/claude/tags" },
-  { icon: Upload,   label: "単体インポート", path: "/claude/single" },
-  { icon: Sparkles, label: "スマート起動", path: "/claude/smart" },
-  { icon: Wand2,    label: "MCP設定",      path: "/claude/mcp" },
+  { icon: Github,    label: "GitHub取得",   path: "/claude/github" },
+  { icon: GitMerge,  label: "AIマージ",     path: "/claude/merge" },
+  { icon: GitBranch, label: "差分インポート", path: "/claude/diff" },
+  { icon: Tag,       label: "自動タグ付け", path: "/claude/tags" },
+  { icon: Upload,    label: "単体インポート", path: "/claude/single" },
+  { icon: Sparkles,  label: "スマート起動", path: "/claude/smart" },
+  { icon: Wand2,     label: "MCP設定",      path: "/claude/mcp" },
 ];
 
 // ユーザー用「設定」サブメニュー
@@ -171,16 +369,18 @@ function SubMenu({
       {items.map((sub) => {
         const isSubActive = location === sub.path || location.startsWith(sub.path + "/");
         return (
-          <SidebarMenuItem key={sub.path}>
-            <SidebarMenuButton
-              isActive={isSubActive}
-              onClick={() => setLocation(sub.path)}
-              className="h-8 font-normal text-xs"
-            >
-              <sub.icon className={`h-3.5 w-3.5 ${isSubActive ? "text-primary" : "text-muted-foreground"}`} />
-              <span className="text-xs">{sub.label}</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
+          <MenuItemWithManual key={sub.path} path={sub.path}>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                isActive={isSubActive}
+                onClick={() => setLocation(sub.path)}
+                className="h-8 font-normal text-xs"
+              >
+                <sub.icon className={`h-3.5 w-3.5 ${isSubActive ? "text-primary" : "text-muted-foreground"}`} />
+                <span className="text-xs">{sub.label}</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </MenuItemWithManual>
         );
       })}
     </div>
@@ -197,6 +397,7 @@ function ExpandableMenuItem({
   defaultPath,
   onToggle,
   tooltip,
+  manualPath,
 }: {
   icon: React.ElementType;
   label: string;
@@ -206,31 +407,50 @@ function ExpandableMenuItem({
   defaultPath: string;
   onToggle: () => void;
   tooltip: string;
+  manualPath?: string;
 }) {
   const [, setLocation] = useLocation();
+  const [hovered, setHovered] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const manual = manualPath ? MANUAL_MAP[manualPath] : undefined;
+
   return (
-    <SidebarMenuItem>
-      <SidebarMenuButton
-        isActive={isActive}
-        onClick={() => {
-          if (isCollapsed) {
-            setLocation(defaultPath);
-          } else {
-            onToggle();
-          }
-        }}
-        tooltip={tooltip}
-        className="h-9 font-normal"
-      >
-        <Icon className={`h-4 w-4 ${isActive ? "text-primary" : "text-muted-foreground"}`} />
-        <span className="text-sm flex-1">{label}</span>
-        {!isCollapsed && (
-          isOpen
-            ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-            : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-        )}
-      </SidebarMenuButton>
-    </SidebarMenuItem>
+    <div
+      ref={ref}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      className="relative"
+    >
+      <SidebarMenuItem>
+        <SidebarMenuButton
+          isActive={isActive}
+          onClick={() => {
+            if (isCollapsed) {
+              setLocation(defaultPath);
+            } else {
+              onToggle();
+            }
+          }}
+          tooltip={tooltip}
+          className="h-9 font-normal"
+        >
+          <Icon className={`h-4 w-4 ${isActive ? "text-primary" : "text-muted-foreground"}`} />
+          <span className="text-sm flex-1">{label}</span>
+          {!isCollapsed && (
+            isOpen
+              ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+              : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+          )}
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+      {manual && (
+        <ManualTooltip
+          manual={manual}
+          visible={hovered}
+          anchorRef={ref as React.RefObject<HTMLElement>}
+        />
+      )}
+    </div>
   );
 }
 
@@ -353,17 +573,19 @@ function DashboardLayoutContent({
             <SidebarMenu className="px-2">
 
               {/* ダッシュボード */}
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={location === "/dashboard" || location === "/"}
-                  onClick={() => setLocation("/dashboard")}
-                  tooltip="ダッシュボード"
-                  className="h-9 font-normal"
-                >
-                  <LayoutDashboard className={`h-4 w-4 ${(location === "/dashboard" || location === "/") ? "text-primary" : "text-muted-foreground"}`} />
-                  <span className="text-sm">ダッシュボード</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+              <MenuItemWithManual path="/dashboard">
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={location === "/dashboard" || location === "/"}
+                    onClick={() => setLocation("/dashboard")}
+                    tooltip="ダッシュボード"
+                    className="h-9 font-normal"
+                  >
+                    <LayoutDashboard className={`h-4 w-4 ${(location === "/dashboard" || location === "/") ? "text-primary" : "text-muted-foreground"}`} />
+                    <span className="text-sm">ダッシュボード</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </MenuItemWithManual>
 
               {/* ─── マイスキル（展開可能）─── */}
               <ExpandableMenuItem
@@ -375,6 +597,7 @@ function DashboardLayoutContent({
                 defaultPath="/skills"
                 onToggle={() => setSkillsOpen((v) => !v)}
                 tooltip="マイスキル"
+                manualPath="/skills"
               />
               {!isCollapsed && (
                 <SubMenu
@@ -395,6 +618,7 @@ function DashboardLayoutContent({
                 defaultPath="/community"
                 onToggle={() => setCommunityOpen((v) => !v)}
                 tooltip="スキル広場"
+                manualPath="/community"
               />
               {!isCollapsed && (
                 <SubMenu
@@ -406,17 +630,19 @@ function DashboardLayoutContent({
               )}
 
               {/* スキル系譜 */}
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={location.startsWith("/genealogy")}
-                  onClick={() => setLocation("/genealogy")}
-                  tooltip="スキル系譜"
-                  className="h-9 font-normal"
-                >
-                  <GitBranch className={`h-4 w-4 ${location.startsWith("/genealogy") ? "text-primary" : "text-muted-foreground"}`} />
-                  <span className="text-sm">スキル系譜</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+              <MenuItemWithManual path="/genealogy">
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={location.startsWith("/genealogy")}
+                    onClick={() => setLocation("/genealogy")}
+                    tooltip="スキル系譜"
+                    className="h-9 font-normal"
+                  >
+                    <GitBranch className={`h-4 w-4 ${location.startsWith("/genealogy") ? "text-primary" : "text-muted-foreground"}`} />
+                    <span className="text-sm">スキル系譜</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </MenuItemWithManual>
 
               {/* ─── Agent連携（展開可能）─── */}
               <ExpandableMenuItem
@@ -428,6 +654,7 @@ function DashboardLayoutContent({
                 defaultPath="/claude/github"
                 onToggle={() => setClaudeOpen((v) => !v)}
                 tooltip="Agent連携"
+                manualPath="/claude/github"
               />
               {!isCollapsed && (
                 <SubMenu
@@ -446,29 +673,31 @@ function DashboardLayoutContent({
               )}
 
               {/* 設定 親ボタン */}
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={isSettingsActive}
-                  onClick={() => {
-                    if (isCollapsed) {
-                      setLocation("/settings/integrations");
-                    } else {
-                      setSettingsOpen((v) => !v);
-                      if (!settingsOpen) setLocation("/settings/integrations");
-                    }
-                  }}
-                  tooltip="設定"
-                  className="h-9 font-normal"
-                >
-                  <Settings className={`h-4 w-4 ${isSettingsActive ? "text-primary" : "text-muted-foreground"}`} />
-                  <span className="text-sm flex-1">設定</span>
-                  {!isCollapsed && (
-                    settingsOpen
-                      ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-                      : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-                  )}
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+              <MenuItemWithManual path="/settings/integrations">
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={isSettingsActive}
+                    onClick={() => {
+                      if (isCollapsed) {
+                        setLocation("/settings/integrations");
+                      } else {
+                        setSettingsOpen((v) => !v);
+                        if (!settingsOpen) setLocation("/settings/integrations");
+                      }
+                    }}
+                    tooltip="設定"
+                    className="h-9 font-normal"
+                  >
+                    <Settings className={`h-4 w-4 ${isSettingsActive ? "text-primary" : "text-muted-foreground"}`} />
+                    <span className="text-sm flex-1">設定</span>
+                    {!isCollapsed && (
+                      settingsOpen
+                        ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                        : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                    )}
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </MenuItemWithManual>
 
               {/* 設定 サブメニュー */}
               {!isCollapsed && settingsOpen && (
@@ -493,29 +722,31 @@ function DashboardLayoutContent({
                   )}
 
                   {/* 管理者パネル 親ボタン */}
-                  <SidebarMenuItem>
-                    <SidebarMenuButton
-                      isActive={isAdminActive}
-                      onClick={() => {
-                        if (isCollapsed) {
-                          setLocation("/admin/account");
-                        } else {
-                          setAdminOpen((v) => !v);
-                          if (!adminOpen) setLocation("/admin/account");
-                        }
-                      }}
-                      tooltip="管理者パネル"
-                      className="h-9 font-normal"
-                    >
-                      <Shield className={`h-4 w-4 ${isAdminActive ? "text-primary" : "text-muted-foreground"}`} />
-                      <span className="text-sm flex-1">管理者パネル</span>
-                      {!isCollapsed && (
-                        adminOpen
-                          ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-                          : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-                      )}
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
+                  <MenuItemWithManual path="/admin/account">
+                    <SidebarMenuItem>
+                      <SidebarMenuButton
+                        isActive={isAdminActive}
+                        onClick={() => {
+                          if (isCollapsed) {
+                            setLocation("/admin/account");
+                          } else {
+                            setAdminOpen((v) => !v);
+                            if (!adminOpen) setLocation("/admin/account");
+                          }
+                        }}
+                        tooltip="管理者パネル"
+                        className="h-9 font-normal"
+                      >
+                        <Shield className={`h-4 w-4 ${isAdminActive ? "text-primary" : "text-muted-foreground"}`} />
+                        <span className="text-sm flex-1">管理者パネル</span>
+                        {!isCollapsed && (
+                          adminOpen
+                            ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                            : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                        )}
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  </MenuItemWithManual>
 
                   {/* 管理者パネル サブメニュー */}
                   {!isCollapsed && adminOpen && (

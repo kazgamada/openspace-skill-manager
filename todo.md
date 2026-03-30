@@ -151,3 +151,8 @@
 - [x] MySkills.tsx: タブUIを削除し、URLパス（/skills/health）でコンテンツを切り替え（実装済み確認）
 - [x] Community.tsx: タブUIを削除し、URLパス（/community/sources）でコンテンツを切り替え（実装済み確認）
 - [x] ClaudeIntegration.tsx: タブUIを削除し、URLパス（/claude/:tab）でコンテンツを切り替え（実装済み確認）
+
+## ホバーマニュアル（ツールチップ）機能
+- [x] DashboardLayout.tsx: 各メニュー項目にマニュアルテキスト（説明文）を定義
+- [x] DashboardLayout.tsx: ホバー時に右側にマニュアルパネル（ツールチップ）を表示するUIを実装
+- [x] 第1階層・第2階層の全メニュー項目に対応
