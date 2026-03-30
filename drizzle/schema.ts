@@ -187,3 +187,26 @@ export const userSettings = mysqlTable("user_settings", {
 
 export type UserSettings = typeof userSettings.$inferSelect;
 export type InsertUserSettings = typeof userSettings.$inferInsert;
+
+// ─────────────────────────────────────────────
+// User Integrations (複数アカウント・フォルダー連携)
+// type: "github" | "googleDrive" | "localFolder" | "claude"
+// config: JSON (type別のフィールドを格納)
+//   github:      { token, username, label }
+//   googleDrive: { folderId, folderName, credentials?, label }
+//   localFolder: { path, watchInterval?, label }
+//   claude:      { apiKey, skillsDir?, label }
+// ─────────────────────────────────────────────
+export const userIntegrations = mysqlTable("user_integrations", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  type: varchar("type", { length: 32 }).notNull(), // "github" | "googleDrive" | "localFolder" | "claude"
+  label: varchar("label", { length: 128 }).notNull(), // ユーザー定義の表示名
+  config: text("config").notNull(), // JSON
+  status: varchar("status", { length: 16 }).default("unknown").notNull(), // "connected" | "error" | "unknown"
+  lastTestedAt: timestamp("lastTestedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type UserIntegration = typeof userIntegrations.$inferSelect;
+export type InsertUserIntegration = typeof userIntegrations.$inferInsert;

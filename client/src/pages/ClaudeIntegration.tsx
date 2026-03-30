@@ -147,6 +147,11 @@ function GithubFetchTab() {
   const [fetchedSkills, setFetchedSkills] = useState<FetchedSkill[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [importResults, setImportResults] = useState<ImportResult[] | null>(null);
+  const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
+
+  // 連携済みGitHubアカウント一覧
+  const accountsQuery = trpc.settings.listIntegrations.useQuery({ type: "github" });
+  const accounts = accountsQuery.data ?? [];
 
   const fetchMutation = trpc.claude.fetchGithubSkills.useMutation({
     onSuccess: (data) => {
@@ -200,6 +205,70 @@ function GithubFetchTab() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* 連携アカウント選択 */}
+          {accounts.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-white/60 text-xs font-medium">連携済みGitHubアカウント</p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setSelectedAccountId(null)}
+                  className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                    selectedAccountId === null
+                      ? "border-purple-500/60 bg-purple-500/20 text-purple-300"
+                      : "border-white/15 bg-white/5 text-white/50 hover:border-white/30"
+                  }`}
+                >
+                  手動入力
+                </button>
+                {accounts.map((acc) => {
+                  const cfg = acc.config as Record<string, string>;
+                  const isSelected = selectedAccountId === acc.id;
+                  return (
+                    <button
+                      key={acc.id}
+                      onClick={() => {
+                        setSelectedAccountId(acc.id);
+                        if (cfg.username) setRepoUrl(`https://github.com/${cfg.username}`);
+                      }}
+                      className={`text-xs px-3 py-1.5 rounded-full border transition-colors flex items-center gap-1.5 ${
+                        isSelected
+                          ? "border-emerald-500/60 bg-emerald-500/20 text-emerald-300"
+                          : "border-white/15 bg-white/5 text-white/50 hover:border-white/30"
+                      }`}
+                    >
+                      <Github className="w-3 h-3" />
+                      {acc.label}
+                      {acc.status === "connected" && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
+                    </button>
+                  );
+                })}
+              </div>
+              {selectedAccountId !== null && (() => {
+                const acc = accounts.find((a) => a.id === selectedAccountId);
+                const cfg = acc?.config as Record<string, string> | undefined;
+                return acc ? (
+                  <div className="flex items-center gap-2 p-2 rounded-lg bg-white/5 border border-white/10 text-xs text-white/60">
+                    <Github className="w-3.5 h-3.5" />
+                    <span>{acc.label}</span>
+                    {cfg?.username && <span className="font-mono">@{cfg.username}</span>}
+                    {cfg?.token && <span className="font-mono">{cfg.token.slice(0, 4)}••••</span>}
+                    {acc.status === "connected" ? (
+                      <span className="text-emerald-400 ml-auto">接続済み</span>
+                    ) : (
+                      <span className="text-yellow-400 ml-auto">未確認</span>
+                    )}
+                  </div>
+                ) : null;
+              })()}
+            </div>
+          )}
+          {accounts.length === 0 && (
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-white/5 border border-dashed border-white/15 text-xs text-white/40">
+              <Github className="w-4 h-4" />
+              <span>GitHubアカウントが未登録です。</span>
+              <a href="/settings/integrations" className="text-purple-400 underline underline-offset-2 hover:text-purple-300">連携設定で登録</a>
+            </div>
+          )}
           <div className="flex gap-2 flex-wrap">
             {popularRepos.map((r) => (
               <button key={r.url} onClick={() => setRepoUrl(r.url)}
@@ -213,7 +282,11 @@ function GithubFetchTab() {
               className="bg-white/5 border-white/15 text-white placeholder:text-white/30 flex-1" />
             <Input value={subPath} onChange={(e) => setSubPath(e.target.value)} placeholder="サブパス (任意)"
               className="bg-white/5 border-white/15 text-white placeholder:text-white/30 w-40" />
-            <Button onClick={() => fetchMutation.mutate({ repoUrl, subPath, maxFiles: 20 })}
+            <Button onClick={() => {
+              const selectedAcc = selectedAccountId !== null ? accounts.find((a) => a.id === selectedAccountId) : null;
+              const cfg = selectedAcc?.config as Record<string, string> | undefined;
+              fetchMutation.mutate({ repoUrl, subPath, maxFiles: 20, githubToken: cfg?.token });
+            }}
               disabled={fetchMutation.isPending || !repoUrl} className="bg-purple-600 hover:bg-purple-700 text-white gap-2">
               {fetchMutation.isPending ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Github className="w-4 h-4" />}
               取得

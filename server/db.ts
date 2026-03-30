@@ -22,6 +22,8 @@ import {
   skills,
   users,
   userSettings,
+  userIntegrations,
+  UserIntegration,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -574,4 +576,58 @@ export async function removeDuplicateCommunitySkills(): Promise<number> {
     await db.delete(communitySkills).where(eq(communitySkills.id, id));
   }
   return toDelete.length;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// User Integrations CRUD
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function getUserIntegrations(userId: number, type?: string): Promise<UserIntegration[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = type
+    ? and(eq(userIntegrations.userId, userId), eq(userIntegrations.type, type))
+    : eq(userIntegrations.userId, userId);
+  return db.select().from(userIntegrations).where(conditions).orderBy(userIntegrations.createdAt);
+}
+
+export async function addUserIntegration(
+  userId: number,
+  data: { type: string; label: string; config: Record<string, string> }
+): Promise<UserIntegration> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const [result] = await db.insert(userIntegrations).values({
+    userId,
+    type: data.type,
+    label: data.label,
+    config: JSON.stringify(data.config),
+    status: "unknown",
+  });
+  const [row] = await db.select().from(userIntegrations).where(eq(userIntegrations.id, (result as { insertId: number }).insertId));
+  return row;
+}
+
+export async function updateUserIntegration(
+  id: number,
+  userId: number,
+  data: Partial<{ label: string; config: Record<string, string>; status: string; lastTestedAt: Date }>
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const updateData: Record<string, unknown> = {};
+  if (data.label !== undefined) updateData.label = data.label;
+  if (data.config !== undefined) updateData.config = JSON.stringify(data.config);
+  if (data.status !== undefined) updateData.status = data.status;
+  if (data.lastTestedAt !== undefined) updateData.lastTestedAt = data.lastTestedAt;
+  await db.update(userIntegrations)
+    .set(updateData)
+    .where(and(eq(userIntegrations.id, id), eq(userIntegrations.userId, userId)));
+}
+
+export async function deleteUserIntegration(id: number, userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(userIntegrations)
+    .where(and(eq(userIntegrations.id, id), eq(userIntegrations.userId, userId)));
 }

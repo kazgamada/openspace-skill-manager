@@ -36,6 +36,13 @@
       "when": 1774874893140,
       "tag": "0004_fearless_nighthawk",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1774914293432,
+      "tag": "0005_fluffy_paper_doll",
+      "breakpoints": true
     }
   ]
 }

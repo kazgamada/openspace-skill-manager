@@ -156,3 +156,10 @@
 - [x] DashboardLayout.tsx: 各メニュー項目にマニュアルテキスト（説明文）を定義
 - [x] DashboardLayout.tsx: ホバー時に右側にマニュアルパネル（ツールチップ）を表示するUIを実装
 - [x] 第1階層・第2階層の全メニュー項目に対応
+
+## 複数アカウント・フォルダー連携機能
+- [x] DBスキーマ: integrations テーブル（id, userId, type, label, token/url, folderId, status, lastTestedAt）を追加
+- [x] server/db.ts: 連携CRUD（getIntegrations, addIntegration, updateIntegration, deleteIntegration, testIntegration）を追加
+- [x] server/routers.ts: integrations tRPCプロシージャーを追加（list, add, update, delete, test）
+- [x] Integrations.tsx: 複数アカウント登録・一覧・削除・テストUIに書き直し（GitHub/GoogleDrive/LocalFolder/Claude対応）
+- [x] ClaudeIntegration.tsx (github): 連携アカウント一覧を表示し選択してスキル取得できる機能を追加
