@@ -2,9 +2,10 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { GitBranch, ZoomIn, ZoomOut, Maximize2, Info } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { GitBranch, ZoomIn, ZoomOut, Maximize2, Info, Bot, AlertCircle, CheckCircle2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { useParams } from "wouter";
+import { useParams, useLocation } from "wouter";
 import cytoscape from "cytoscape";
 import { formatDistanceToNow } from "date-fns";
 import { ja } from "date-fns/locale";
@@ -176,12 +177,15 @@ export default function Genealogy() {
   const [selectedNode, setSelectedNode] = useState<{
     id: string; label: string; evolutionType: string; qualityScore: number | null; changeLog: string | null; createdAt: Date;
   } | null>(null);
+  const [, setLocation] = useLocation();
 
   const skillsQuery = trpc.skills.list.useQuery();
   const genealogyQuery = trpc.skills.genealogy.useQuery(
     { skillId: selectedSkillId },
     { enabled: !!selectedSkillId }
   );
+  const { data: integrations } = trpc.settings.getIntegrations.useQuery();
+  const claudeConnected = (integrations as { claude?: { connected?: boolean } } | undefined)?.claude?.connected === true;
 
   const skills = skillsQuery.data ?? [];
   const genealogy = genealogyQuery.data;
@@ -189,6 +193,30 @@ export default function Genealogy() {
   return (
     <DashboardLayout>
       <div className="flex flex-col h-[calc(100vh-3rem)]">
+        {/* Claude Integration Banner */}
+        {!claudeConnected && (
+          <div className="flex items-center gap-3 px-6 py-2.5 bg-amber-500/10 border-b border-amber-500/20 text-sm shrink-0">
+            <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+            <div className="flex-1">
+              <span className="font-medium text-amber-300">Claude未連携</span>
+              <span className="text-amber-400/80 ml-2">Claude Codeと連携するとスキルの系譜情報を自動取得できます</span>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => setLocation("/admin?tab=integrations")} className="h-7 text-xs gap-1.5 border-amber-500/30 text-amber-400 hover:bg-amber-500/10 shrink-0">
+              <Bot className="w-3.5 h-3.5" />連携設定
+            </Button>
+          </div>
+        )}
+        {claudeConnected && (
+          <div className="flex items-center gap-3 px-6 py-2.5 bg-emerald-500/10 border-b border-emerald-500/20 text-sm shrink-0">
+            <Bot className="w-4 h-4 text-emerald-400 shrink-0" />
+            <div className="flex-1">
+              <span className="font-medium text-emerald-300">Claude Code連携済み</span>
+              <span className="text-emerald-400/80 ml-2">MCP接続が有効です。スキルの系譜情報を自動取得しています</span>
+            </div>
+            <Badge variant="outline" className="border-emerald-500/30 text-emerald-400 bg-emerald-500/10 text-xs"><CheckCircle2 className="w-3 h-3 mr-1" />接続済み</Badge>
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
           <div>

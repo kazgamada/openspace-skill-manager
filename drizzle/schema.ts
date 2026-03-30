@@ -135,3 +135,26 @@ export const healthThresholds = mysqlTable("health_thresholds", {
 });
 
 export type HealthThreshold = typeof healthThresholds.$inferSelect;
+
+// ─────────────────────────────────────────────
+// User Settings (per-user preferences + integrations)
+// ─────────────────────────────────────────────
+export const userSettings = mysqlTable("user_settings", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+  // Appearance
+  theme: varchar("theme", { length: 32 }).default("dark"),
+  language: varchar("language", { length: 16 }).default("ja"),
+  // Notifications
+  notifyOnRepair: boolean("notifyOnRepair").default(true),
+  notifyOnDegradation: boolean("notifyOnDegradation").default(true),
+  notifyOnCommunity: boolean("notifyOnCommunity").default(false),
+  emailDigest: boolean("emailDigest").default(false),
+  // Integrations (JSON object with per-service config)
+  // Shape: { claude?: { apiKey?, mcpPath?, connected, lastTestedAt }, github?: { token?, username?, connected, lastTestedAt }, googleDrive?: { folderId?, connected, lastTestedAt }, localFolder?: { path?, connected, lastTestedAt } }
+  integrations: text("integrations"),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type UserSettings = typeof userSettings.$inferSelect;
+export type InsertUserSettings = typeof userSettings.$inferInsert;

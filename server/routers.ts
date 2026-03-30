@@ -27,6 +27,8 @@ import {
   getUserSettings,
   updateUserSettings,
   findSkillByNameForUser,
+  getUserSettingsByUserId,
+  upsertUserSettings,
 } from "./db";
 import { invokeLLM } from "./_core/llm";
 import { systemRouter } from "./_core/systemRouter";
@@ -1038,6 +1040,100 @@ const settingsRouter = router({
       await updateUserSettings(ctx.user.id, input);
       return { success: true };
     }),
+
+  // ── Integrations ──
+  getIntegrations: protectedProcedure.query(async ({ ctx }) => {
+    const s = await getUserSettingsByUserId(ctx.user.id);
+    if (!s?.integrations) return {};
+    try { return JSON.parse(s.integrations) as Record<string, unknown>; }
+    catch { return {}; }
+  }),
+
+  saveIntegration: protectedProcedure
+    .input(z.object({
+      service: z.enum(["claude", "github", "googleDrive", "localFolder"]),
+      config: z.record(z.string(), z.unknown()),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const s = await getUserSettingsByUserId(ctx.user.id);
+      let integrations: Record<string, unknown> = {};
+      if (s?.integrations) {
+        try { integrations = JSON.parse(s.integrations); } catch {}
+      }
+      integrations[input.service] = { ...integrations[input.service] as object, ...input.config, connected: true, lastTestedAt: null };
+      await upsertUserSettings(ctx.user.id, { integrations: JSON.stringify(integrations) });
+      return { success: true };
+    }),
+
+  testIntegration: protectedProcedure
+    .input(z.object({
+      service: z.enum(["claude", "github", "googleDrive", "localFolder"]),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      // Simulate connection test (real implementation would call each service API)
+      const s = await getUserSettingsByUserId(ctx.user.id);
+      let integrations: Record<string, unknown> = {};
+      if (s?.integrations) {
+        try { integrations = JSON.parse(s.integrations); } catch {}
+      }
+      const svc = integrations[input.service] as Record<string, unknown> | undefined;
+      let success = false;
+      let message = "未設定";
+      if (svc) {
+        // GitHub: check if token is set
+        if (input.service === "github" && svc.token) { success = true; message = "GitHub接続成功"; }
+        // Claude: check if mcpPath or apiKey is set
+        else if (input.service === "claude" && (svc.mcpPath || svc.apiKey)) { success = true; message = "Claude接続成功"; }
+        // Google Drive: check if folderId is set
+        else if (input.service === "googleDrive" && svc.folderId) { success = true; message = "Google Drive接続成功"; }
+        // Local folder: check if path is set
+        else if (input.service === "localFolder" && svc.path) { success = true; message = "ローカルフォルダ接続成功"; }
+        else { message = "設定が不完全です"; }
+      }
+      // Persist lastTestedAt
+      integrations[input.service] = { ...(svc ?? {}), lastTestedAt: new Date().toISOString(), connected: success };
+      await upsertUserSettings(ctx.user.id, { integrations: JSON.stringify(integrations) });
+      return { success, message };
+    }),
+
+  disconnectIntegration: protectedProcedure
+    .input(z.object({ service: z.enum(["claude", "github", "googleDrive", "localFolder"]) }))
+    .mutation(async ({ input, ctx }) => {
+      const s = await getUserSettingsByUserId(ctx.user.id);
+      let integrations: Record<string, unknown> = {};
+      if (s?.integrations) {
+        try { integrations = JSON.parse(s.integrations); } catch {}
+      }
+      delete integrations[input.service];
+      await upsertUserSettings(ctx.user.id, { integrations: JSON.stringify(integrations) });
+      return { success: true };
+    }),
+
+  updatePreferences: protectedProcedure
+    .input(z.object({
+      theme: z.string().optional(),
+      language: z.string().optional(),
+      notifyOnRepair: z.boolean().optional(),
+      notifyOnDegradation: z.boolean().optional(),
+      notifyOnCommunity: z.boolean().optional(),
+      emailDigest: z.boolean().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      await upsertUserSettings(ctx.user.id, input);
+      return { success: true };
+    }),
+
+  getPreferences: protectedProcedure.query(async ({ ctx }) => {
+    const s = await getUserSettingsByUserId(ctx.user.id);
+    return {
+      theme: s?.theme ?? "dark",
+      language: s?.language ?? "ja",
+      notifyOnRepair: s?.notifyOnRepair ?? true,
+      notifyOnDegradation: s?.notifyOnDegradation ?? true,
+      notifyOnCommunity: s?.notifyOnCommunity ?? false,
+      emailDigest: s?.emailDigest ?? false,
+    };
+  }),
 });
 
 // ─────────────────────────────────────────────

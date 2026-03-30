@@ -6,10 +6,11 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   Search, Star, Download, Zap, Globe, Filter,
-  CheckCircle2, TrendingUp, Award,
+  CheckCircle2, TrendingUp, Award, Github, AlertCircle, ExternalLink,
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { useLocation } from "wouter";
 
 const CATEGORIES = ["all", "web", "search", "data", "auth", "ai", "util"];
 
@@ -31,6 +32,9 @@ export default function Community() {
   const [category, setCategory] = useState("all");
   const [searchInput, setSearchInput] = useState("");
   const utils = trpc.useUtils();
+  const [, setLocation] = useLocation();
+  const { data: integrations } = trpc.settings.getIntegrations.useQuery();
+  const githubConnected = (integrations as { github?: { connected?: boolean } } | undefined)?.github?.connected === true;
 
   const communityQuery = trpc.community.list.useQuery({
     search: search || undefined,
@@ -51,6 +55,30 @@ export default function Community() {
   return (
     <DashboardLayout>
       <div className="p-6 space-y-5 max-w-7xl mx-auto">
+        {/* GitHub Integration Banner */}
+        {!githubConnected && (
+          <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-sm">
+            <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+            <div className="flex-1">
+              <span className="font-medium text-amber-300">GitHub未連携</span>
+              <span className="text-amber-400/80 ml-2">GitHubと連携するとプライベートリポジトリのスキルも検索・インポートできます</span>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => setLocation("/admin?tab=integrations")} className="h-7 text-xs gap-1.5 border-amber-500/30 text-amber-400 hover:bg-amber-500/10 shrink-0">
+              <Github className="w-3.5 h-3.5" />連携設定
+            </Button>
+          </div>
+        )}
+        {githubConnected && (
+          <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-sm">
+            <Github className="w-4 h-4 text-emerald-400 shrink-0" />
+            <div className="flex-1">
+              <span className="font-medium text-emerald-300">GitHub連携済み</span>
+              <span className="text-emerald-400/80 ml-2">プライベートリポジトリのスキルも検索・インポートできます</span>
+            </div>
+            <Badge variant="outline" className="border-emerald-500/30 text-emerald-400 bg-emerald-500/10 text-xs"><CheckCircle2 className="w-3 h-3 mr-1" />接続済み</Badge>
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>

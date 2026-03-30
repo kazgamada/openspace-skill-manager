@@ -440,3 +440,29 @@ export async function findSkillByNameForUser(name: string, authorId: number): Pr
     .limit(1);
   return r[0];
 }
+
+// ─────────────────────────────────────────────
+// User Settings (preferences + integrations)
+// ─────────────────────────────────────────────
+import { userSettings, InsertUserSettings, UserSettings } from "../drizzle/schema";
+
+export async function getUserSettingsByUserId(userId: number): Promise<UserSettings | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const r = await db.select().from(userSettings).where(eq(userSettings.userId, userId)).limit(1);
+  return r[0];
+}
+
+export async function upsertUserSettings(
+  userId: number,
+  data: Partial<Omit<InsertUserSettings, "id" | "userId" | "updatedAt">>
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const existing = await getUserSettingsByUserId(userId);
+  if (existing) {
+    await db.update(userSettings).set(data).where(eq(userSettings.userId, userId));
+  } else {
+    await db.insert(userSettings).values({ userId, ...data });
+  }
+}
