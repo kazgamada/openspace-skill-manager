@@ -41,6 +41,17 @@ async function startServer() {
     createExpressMiddleware({
       router: appRouter,
       createContext,
+      onError({ path, error, type, input, ctx }) {
+        const traceId = Math.random().toString(36).slice(2, 10).toUpperCase();
+        const level =
+          error.code === "INTERNAL_SERVER_ERROR" ? "ERROR" :
+          error.code === "UNAUTHORIZED" || error.code === "FORBIDDEN" ? "WARN" : "INFO";
+        const userEmail = (ctx as { user?: { email?: string } } | undefined)?.user?.email ?? "anonymous";
+        console[level === "ERROR" ? "error" : level === "WARN" ? "warn" : "log"](
+          `[tRPC][${traceId}] ${level} | ${type} ${path ?? "unknown"} | code=${error.code} | user=${userEmail} | msg=${error.message}`,
+          error.code === "INTERNAL_SERVER_ERROR" ? error.cause ?? error : undefined
+        );
+      },
     })
   );
   // development mode uses Vite, production mode uses static files
