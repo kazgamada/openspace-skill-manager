@@ -23,13 +23,9 @@ import {
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import {
-  Activity,
-  Bot,
   Brain,
   ChevronRight,
-  Database,
   GitBranch,
-  HardDrive,
   LayoutDashboard,
   LogOut,
   PanelLeft,
@@ -44,34 +40,36 @@ import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 
-const userMenuItems = [
+// ─── Navigation structure (5 items only) ───────────────────────────────────
+const coreMenuItems = [
   { icon: LayoutDashboard, label: "ダッシュボード", path: "/dashboard" },
-  { icon: Brain, label: "マイスキル", path: "/skills" },
-  { icon: Store, label: "スキル広場", path: "/community" },
-  { icon: GitBranch, label: "スキル系譜", path: "/genealogy" },
-  { icon: Activity, label: "ヘルスモニター", path: "/health" },
-  { icon: Bot, label: "Claude連携", path: "/claude" },
-  { icon: HardDrive, label: "ストレージ", path: "/storage" },
+  { icon: Brain,           label: "マイスキル",     path: "/skills" },
+  { icon: Store,           label: "スキル広場",     path: "/community" },
+  { icon: GitBranch,       label: "スキル系譜",     path: "/genealogy" },
 ];
 
 const adminMenuItems = [
-  { icon: Shield, label: "管理者パネル", path: "/admin" },
+  { icon: Shield,   label: "管理者パネル", path: "/admin" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "osm-sidebar-width";
 const DEFAULT_WIDTH = 240;
-const MIN_WIDTH = 200;
+const MIN_WIDTH = 180;
 const MAX_WIDTH = 320;
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [sidebarWidth, setSidebarWidth] = useState(() => {
-    const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
-    return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
+    try {
+      const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+      return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
+    } catch {
+      return DEFAULT_WIDTH;
+    }
   });
   const { loading, user } = useAuth();
 
   useEffect(() => {
-    localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());
+    try { localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString()); } catch {}
   }, [sidebarWidth]);
 
   if (loading) return <DashboardLayoutSkeleton />;
@@ -80,7 +78,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
         <div className="flex flex-col items-center gap-8 p-8 max-w-sm w-full">
-          {/* Logo */}
           <div className="flex flex-col items-center gap-4">
             <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/30 flex items-center justify-center glow-primary">
               <Zap className="w-8 h-8 text-primary" />
@@ -160,8 +157,8 @@ function DashboardLayoutContent({
     };
   }, [isResizing, setSidebarWidth]);
 
-  const allMenuItems = isAdmin ? [...userMenuItems, ...adminMenuItems] : userMenuItems;
-  const activeItem = allMenuItems.find((item) => location.startsWith(item.path));
+  const allItems = isAdmin ? [...coreMenuItems, ...adminMenuItems] : coreMenuItems;
+  const activeItem = allItems.find((item) => location.startsWith(item.path));
 
   return (
     <>
@@ -181,9 +178,7 @@ function DashboardLayoutContent({
                   <div className="w-6 h-6 rounded-md bg-primary/20 border border-primary/40 flex items-center justify-center shrink-0">
                     <Zap className="w-3.5 h-3.5 text-primary" />
                   </div>
-                  <span className="font-semibold text-sm tracking-tight truncate gradient-text">
-                    OSM
-                  </span>
+                  <span className="font-semibold text-sm tracking-tight truncate gradient-text">OSM</span>
                   {isAdmin && (
                     <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-primary/40 text-primary shrink-0">
                       Admin
@@ -197,7 +192,8 @@ function DashboardLayoutContent({
           {/* Nav */}
           <SidebarContent className="gap-0 py-2">
             <SidebarMenu className="px-2">
-              {userMenuItems.map((item) => {
+              {/* Core 4 items */}
+              {coreMenuItems.map((item) => {
                 const isActive = location.startsWith(item.path);
                 return (
                   <SidebarMenuItem key={item.path}>
@@ -214,10 +210,12 @@ function DashboardLayoutContent({
                 );
               })}
 
+              {/* Admin section */}
               {isAdmin && (
                 <>
                   {!isCollapsed && (
-                    <div className="px-2 pt-3 pb-1">
+                    <div className="px-2 pt-4 pb-1">
+                      <div className="h-px bg-sidebar-border mb-3" />
                       <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
                         管理者
                       </p>
@@ -271,7 +269,7 @@ function DashboardLayoutContent({
                   <p className="text-xs text-muted-foreground">{user?.email}</p>
                 </div>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setLocation("/settings")} className="cursor-pointer">
+                <DropdownMenuItem onClick={() => setLocation("/admin?tab=account")} className="cursor-pointer">
                   <Settings className="mr-2 h-4 w-4" />
                   設定
                 </DropdownMenuItem>

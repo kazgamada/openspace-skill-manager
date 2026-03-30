@@ -61,3 +61,16 @@
 - [x] ClaudeIntegration.tsx: AIマージタブ（複数SKILL.md貼り付け→LLMマージ→プレビュー）
 - [x] ClaudeIntegration.tsx: 差分インポートタブ（既存スキル選択→新バージョンとして登録）
 - [x] ClaudeIntegration.tsx: 自動タグ付けプレビュータブ（allowed-tools→タグマッピング表示）
+
+## メニュー再構成・全設定集約
+- [ ] DashboardLayout.tsx: ナビを「ダッシュボード・マイスキル・スキル広場・スキル系譜・管理者パネル」の5本に整理
+- [ ] DashboardLayout.tsx: 旧「ヘルスモニター・Claude連携・ストレージ・設定」メニュー項目を削除
+- [ ] App.tsx: 旧ルート（/health, /claude, /storage, /settings, /admin-settings）を削除し新ルートに統合
+- [ ] MySkills.tsx: ヘルスモニター機能（品質スコア・閾値・自動修復）をタブとして統合
+- [ ] Community.tsx: GitHub連携状態（接続済み/未接続バナー）を画面上部に表示
+- [ ] Genealogy.tsx: Claude連携状態（MCP接続状態）を画面上部に表示
+- [ ] AdminPanel.tsx: 全設定を1ページに集約（アカウント・通知・外観・連携・ユーザー管理・システム設定・ログ監視）
+- [ ] AdminPanel.tsx: 連携ウィザード（Claude/GitHub/Google Drive/ローカルフォルダー）を実装
+- [ ] AdminPanel.tsx: 連携状況一覧（接続済み・最終テスト日時）を表示
+- [ ] server/routers.ts: 連携設定の保存・取得ルーター（integrations）を追加
+- [ ] drizzle/schema.ts: user_settingsテーブルにintegrations JSONカラムを追加

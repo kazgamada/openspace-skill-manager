@@ -332,8 +332,11 @@ const healthRouter = router({
           successRate,
           trend,
           executionCount: logs.length,
+          totalExecutions: logs.length,
           threshold,
           lastExecuted: logs[0]?.executedAt ?? null,
+          lastExecutedAt: logs[0]?.executedAt ?? null,
+          status: getStatus(latest?.qualityScore ?? 0) as "healthy" | "warning" | "critical",
         };
       })
     );
@@ -348,7 +351,7 @@ const healthRouter = router({
     }),
 
   triggerRepair: protectedProcedure
-    .input(z.object({ skillId: z.string() }))
+    .input(z.object({ skillId: z.string(), triggerType: z.string().optional() }))
     .mutation(async ({ input }) => {
       const skill = await getSkillById(input.skillId);
       if (!skill) throw new TRPCError({ code: "NOT_FOUND" });

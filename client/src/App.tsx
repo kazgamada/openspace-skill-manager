@@ -10,10 +10,6 @@ import MySkills from "./pages/MySkills";
 import SkillDetail from "./pages/SkillDetail";
 import Community from "./pages/Community";
 import Genealogy from "./pages/Genealogy";
-import HealthMonitor from "./pages/HealthMonitor";
-import ClaudeIntegration from "./pages/ClaudeIntegration";
-import Storage from "./pages/Storage";
-import Settings from "./pages/Settings";
 import AdminSettings from "./pages/AdminSettings";
 
 function Router() {
@@ -26,11 +22,11 @@ function Router() {
       <Route path="/community" component={Community} />
       <Route path="/genealogy" component={Genealogy} />
       <Route path="/genealogy/:skillId" component={Genealogy} />
-      <Route path="/health" component={HealthMonitor} />
-      <Route path="/claude" component={ClaudeIntegration} />
-      <Route path="/storage" component={Storage} />
-      <Route path="/settings" component={Settings} />
       <Route path="/admin" component={AdminSettings} />
+      <Route path="/settings" component={AdminSettings} />
+      <Route path="/health" component={AdminSettings} />
+      <Route path="/claude" component={AdminSettings} />
+      <Route path="/storage" component={AdminSettings} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
