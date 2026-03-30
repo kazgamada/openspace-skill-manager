@@ -145,9 +145,9 @@
 - [ ] Agent連携サブナビ: ClaudeIntegration.tsx をサブナビ対応（URL パスで各タブに直接遷移）
 
 ## サイドバー第2階層ナビゲーション統一（マイスキル・スキル広場・Agent連携）
-- [ ] DashboardLayout: マイスキル配下に「スキル一覧」「ヘルスモニター」を第2階層メニューとして追加
-- [ ] DashboardLayout: スキル広場配下に「スキル一覧」「ソース管理」を第2階層メニューとして追加
-- [ ] DashboardLayout: Agent連携配下に「GitHub取得」「AIマージ」「差分インポート」「自動タグ付け」「単体インポート」「スマート起動」「MCP設定」を第2階層メニューとして追加
-- [ ] MySkills.tsx: タブUIを削除し、URLパラメータ（?tab=health等）でコンテンツを切り替え
-- [ ] Community.tsx: タブUIを削除し、URLパラメータ（?tab=sources等）でコンテンツを切り替え
-- [ ] ClaudeIntegration.tsx: タブUIを削除し、URLパラメータ（?tab=github等）でコンテンツを切り替え
+- [x] DashboardLayout: マイスキル配下に「スキル一覧」「ヘルスモニター」を第2階層メニューとして追加
+- [x] DashboardLayout: スキル広場配下に「スキル一覧」「ソース管理」を第2階層メニューとして追加
+- [x] DashboardLayout: Agent連携配下に「GitHub取得」「AIマージ」「差分インポート」「自動タグ付け」「単体インポート」「スマート起動」「MCP設定」を第2階層メニューとして追加
+- [x] MySkills.tsx: タブUIを削除し、URLパス（/skills/health）でコンテンツを切り替え（実装済み確認）
+- [x] Community.tsx: タブUIを削除し、URLパス（/community/sources）でコンテンツを切り替え（実装済み確認）
+- [x] ClaudeIntegration.tsx: タブUIを削除し、URLパス（/claude/:tab）でコンテンツを切り替え（実装済み確認）
