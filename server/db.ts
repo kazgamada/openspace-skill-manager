@@ -431,3 +431,12 @@ export async function updateUserSettings(
     await db.update(users).set(updateData).where(eq(users.id, userId));
   }
 }
+
+export async function findSkillByNameForUser(name: string, authorId: number): Promise<Skill | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const r = await db.select().from(skills)
+    .where(and(eq(skills.name, name), eq(skills.authorId, authorId)))
+    .limit(1);
+  return r[0];
+}

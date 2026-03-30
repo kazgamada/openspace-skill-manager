@@ -219,3 +219,102 @@ describe("claude router", () => {
     await expect(caller.claude.logs({ limit: 10 })).rejects.toThrow();
   });
 });
+
+// ─────────────────────────────────────────────
+// Claude GitHub / AI merge / diff import tests
+// ─────────────────────────────────────────────
+describe("claude.previewSkillMd", () => {
+  it("parses a minimal SKILL.md and returns preview", async () => {
+    const { ctx } = createUserContext();
+    const caller = appRouter.createCaller(ctx);
+    const raw = `---
+name: test-skill
+description: A test skill for unit testing
+allowed-tools: Read, Bash, Grep
+---
+## Instructions
+Do something useful.
+`;
+    const result = await caller.claude.previewSkillMd({ raw });
+    expect(result.preview.name).toBe("test-skill");
+    expect(result.preview.description).toContain("test skill");
+    expect(result.preview.frontmatter["allowed-tools"]).toContain("Read");
+  });
+
+  it("infers name from heading when frontmatter is absent", async () => {
+    const { ctx } = createUserContext();
+    const caller = appRouter.createCaller(ctx);
+    const raw = `# My Inferred Skill\nDo something.`;
+    const result = await caller.claude.previewSkillMd({ raw });
+    expect(result.preview.name.length).toBeGreaterThan(0);
+  });
+
+  it("throws UNAUTHORIZED for unauthenticated users", async () => {
+    const { ctx } = createGuestContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.claude.previewSkillMd({ raw: "# test" })).rejects.toThrow();
+  });
+});
+
+describe("mapAllowedToolsToTags (via previewSkillMd)", () => {
+  it("maps Bash to shell tag and Read to file-read tag", async () => {
+    const { ctx } = createUserContext();
+    const caller = appRouter.createCaller(ctx);
+    const raw = `---
+name: bash-skill
+description: runs bash commands
+allowed-tools: Bash, Read, Grep
+---
+## Instructions
+Run shell commands.
+`;
+    const result = await caller.claude.previewSkillMd({ raw });
+    expect(result.preview.tags).toContain("shell");
+    expect(result.preview.tags).toContain("file-read");
+    expect(result.preview.tags).toContain("text-search");
+  });
+});
+
+describe("claude.fetchGithubSkills", () => {
+  it("throws UNAUTHORIZED for unauthenticated users", async () => {
+    const { ctx } = createGuestContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(
+      caller.claude.fetchGithubSkills({ repoUrl: "https://github.com/test/repo", maxFiles: 5 })
+    ).rejects.toThrow();
+  });
+});
+
+describe("claude.mergeSkillsWithAI", () => {
+  it("throws UNAUTHORIZED for unauthenticated users", async () => {
+    const { ctx } = createGuestContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(
+      caller.claude.mergeSkillsWithAI({
+        skills: [{ name: "a", raw: "# A" }, { name: "b", raw: "# B" }],
+      })
+    ).rejects.toThrow();
+  });
+});
+
+describe("claude.diffImport", () => {
+  it("throws UNAUTHORIZED for unauthenticated users", async () => {
+    const { ctx } = createGuestContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(
+      caller.claude.diffImport({ existingSkillId: "skill-1", raw: "# Updated" })
+    ).rejects.toThrow();
+  });
+});
+
+describe("claude.importFromGithub", () => {
+  it("throws UNAUTHORIZED for unauthenticated users", async () => {
+    const { ctx } = createGuestContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(
+      caller.claude.importFromGithub({
+        skills: [{ name: "test", raw: "# test", path: "test/SKILL.md", repoUrl: "https://github.com/test/repo" }],
+      })
+    ).rejects.toThrow();
+  });
+});

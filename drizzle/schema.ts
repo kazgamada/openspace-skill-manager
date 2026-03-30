@@ -38,7 +38,11 @@ export const skills = mysqlTable("skills", {
   authorId: int("authorId").references(() => users.id),
   isLocal: boolean("isLocal").default(true).notNull(),
   isPublic: boolean("isPublic").default(false).notNull(),
-  tags: text("tags"), // JSON array stored as text
+  tags: text("tags"), // JSON array stored as text e.g. ["Read","Bash"]
+  allowedTools: text("allowedTools"), // JSON array from SKILL.md allowed-tools frontmatter
+  sourceRepo: varchar("sourceRepo", { length: 512 }), // GitHub repo URL if imported from GitHub
+  sourceFile: varchar("sourceFile", { length: 512 }), // original file path in repo
+  mergedFrom: text("mergedFrom"), // JSON array of source skill IDs used in AI merge
   stars: int("stars").default(0).notNull(),
   downloadCount: int("downloadCount").default(0).notNull(),
   currentVersionId: varchar("currentVersionId", { length: 64 }),

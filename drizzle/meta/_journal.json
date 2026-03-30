@@ -15,6 +15,13 @@
       "when": 1774829782099,
       "tag": "0001_dusty_mercury",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1774833287308,
+      "tag": "0002_tidy_bishop",
+      "breakpoints": true
     }
   ]
 }

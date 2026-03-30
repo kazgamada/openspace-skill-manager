@@ -48,3 +48,16 @@
 - [x] ClaudeIntegration.tsx: インポートプレビューモーダル（name/description/category編集・確認）実装
 - [x] ClaudeIntegration.tsx: 一括インポートタブ（複数ファイルドラッグ＆ドロップ）実装
 - [x] ClaudeIntegration.tsx: MCP設定パーサーモーダル（サーバー一覧表示）実装
+
+## GitHub連携・AIマージ・差分インポート機能
+- [x] DB: skillsテーブルにallowedTools/sourceRepo/sourceFile/mergedFromカラム追加・マイグレーション完了
+- [x] server/routers.ts: claude.fetchGithubSkills（GitHub API経由でSKILL.md一覧取得）
+- [x] server/routers.ts: claude.mergeSkillsWithAI（複数SKILL.mdをLLMでマージ・品質向上）
+- [x] server/routers.ts: claude.diffImport（同名スキルを新バージョンとして追加する差分インポート）
+- [x] server/routers.ts: claude.importFromGithub（選択スキルをOSMに一括登録）
+- [x] server/routers.ts: mapAllowedToolsToTags（allowed-tools→タグ自動マッピング）
+- [x] ClaudeIntegration.tsx: GitHubリポジトリーURL入力→SKILL.md一覧取得UI（人気リポジトリクイック選択）
+- [x] ClaudeIntegration.tsx: スキル選択→一括インポートウィザードUI（全選択/全解除・結果表示）
+- [x] ClaudeIntegration.tsx: AIマージタブ（複数SKILL.md貼り付け→LLMマージ→プレビュー）
+- [x] ClaudeIntegration.tsx: 差分インポートタブ（既存スキル選択→新バージョンとして登録）
+- [x] ClaudeIntegration.tsx: 自動タグ付けプレビュータブ（allowed-tools→タグマッピング表示）

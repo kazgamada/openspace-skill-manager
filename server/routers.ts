@@ -26,7 +26,9 @@ import {
   getAllVersions,
   getUserSettings,
   updateUserSettings,
+  findSkillByNameForUser,
 } from "./db";
+import { invokeLLM } from "./_core/llm";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { COOKIE_NAME } from "@shared/const";
@@ -497,7 +499,12 @@ const claudeRouter = router({
     .input(z.object({ raw: z.string().min(1).max(100_000) }))
     .mutation(async ({ input }) => {
       const parsed = parseSkillMd(input.raw);
-      return { success: true, preview: parsed };
+      const allowedToolsRaw = parsed.frontmatter["allowed-tools"] ?? "";
+      const allowedTools = allowedToolsRaw
+        ? allowedToolsRaw.split(/[,\s]+/).map((t) => t.trim()).filter(Boolean)
+        : [];
+      const mappedTags = mapAllowedToolsToTags(allowedTools, parsed.description);
+      return { success: true, preview: { ...parsed, tags: mappedTags, allowedTools } };
     }),
 
   /** Import one SKILL.md text into the user's skill library */
@@ -620,6 +627,355 @@ const claudeRouter = router({
       return { success: true, total: results.length, succeeded, failed: results.length - succeeded, results };
     }),
 
+  // ─── GitHub Skill Fetch ───────────────────────────────────────────────────
+  /** Fetch SKILL.md files from a public GitHub repository */
+  fetchGithubSkills: protectedProcedure
+    .input(
+      z.object({
+        repoUrl: z.string().url(), // e.g. https://github.com/anthropics/skills
+        subPath: z.string().default(""), // optional subdirectory e.g. "skills"
+        maxFiles: z.number().min(1).max(30).default(20),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const traceId = Math.random().toString(36).slice(2, 8).toUpperCase();
+      try {
+        // Parse owner/repo from URL
+        const urlMatch = input.repoUrl.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?(?:\/|$)/);
+        if (!urlMatch) throw new TRPCError({ code: "BAD_REQUEST", message: "有効なGitHub URLを入力してください" });
+        const [, owner, repo] = urlMatch;
+
+        // Recursively list files using GitHub Trees API
+        const treeRes = await fetch(
+          `https://api.github.com/repos/${owner}/${repo}/git/trees/HEAD?recursive=1`,
+          { headers: { Accept: "application/vnd.github.v3+json", "User-Agent": "OSM/1.0" } }
+        );
+        if (!treeRes.ok) throw new TRPCError({ code: "BAD_REQUEST", message: `GitHub API エラー: ${treeRes.status} ${treeRes.statusText}` });
+        const treeData = await treeRes.json() as { tree: { path: string; type: string }[] };
+
+        // Filter SKILL.md files under subPath
+        const prefix = input.subPath ? input.subPath.replace(/^\/|\/$/, "") + "/" : "";
+        const skillPaths = treeData.tree
+          .filter((f) => f.type === "blob" && f.path.startsWith(prefix) && /SKILL\.md$/i.test(f.path))
+          .slice(0, input.maxFiles)
+          .map((f) => f.path);
+
+        if (skillPaths.length === 0) {
+          return { success: true, skills: [], count: 0, message: "SKILL.mdファイルが見つかりませんでした" };
+        }
+
+        // Fetch each SKILL.md content
+        const fetchedSkills: { path: string; name: string; description: string; category: string; tags: string[]; allowedTools: string[]; content: string; raw: string }[] = [];
+        for (const path of skillPaths) {
+          try {
+            const rawRes = await fetch(
+              `https://raw.githubusercontent.com/${owner}/${repo}/HEAD/${path}`,
+              { headers: { "User-Agent": "OSM/1.0" } }
+            );
+            if (!rawRes.ok) continue;
+            const raw = await rawRes.text();
+            const parsed = parseSkillMd(raw);
+            // Extract allowed-tools as array
+            const allowedToolsRaw = parsed.frontmatter["allowed-tools"] ?? "";
+            const allowedTools = allowedToolsRaw
+              ? allowedToolsRaw.split(/[,\s]+/).map((t) => t.trim()).filter(Boolean)
+              : [];
+            fetchedSkills.push({
+              path,
+              name: parsed.name,
+              description: parsed.description,
+              category: parsed.category,
+              tags: mapAllowedToolsToTags(allowedTools, parsed.description),
+              allowedTools,
+              content: parsed.content,
+              raw,
+            });
+          } catch (e) {
+            console.warn(`[claude.fetchGithubSkills][${traceId}] Skip ${path}:`, e);
+          }
+        }
+
+        return {
+          success: true,
+          skills: fetchedSkills,
+          count: fetchedSkills.length,
+          repoUrl: input.repoUrl,
+          owner,
+          repo,
+        };
+      } catch (err) {
+        if (err instanceof TRPCError) throw err;
+        console.error(`[claude.fetchGithubSkills][${traceId}] Error:`, err);
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `GitHub取得に失敗しました: ${err instanceof Error ? err.message : String(err)}` });
+      }
+    }),
+
+  // ─── AI Merge ────────────────────────────────────────────────────────────
+  /** Merge multiple SKILL.md contents with LLM to produce a higher-quality unified skill */
+  mergeSkillsWithAI: protectedProcedure
+    .input(
+      z.object({
+        skills: z.array(
+          z.object({
+            name: z.string(),
+            raw: z.string().max(50_000),
+          })
+        ).min(2).max(5),
+        targetName: z.string().optional(),
+        targetDescription: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const traceId = Math.random().toString(36).slice(2, 8).toUpperCase();
+      try {
+        const skillsText = input.skills
+          .map((s, i) => `### Source Skill ${i + 1}: ${s.name}\n\`\`\`markdown\n${s.raw.slice(0, 8000)}\n\`\`\``)
+          .join("\n\n");
+
+        const prompt = `You are an expert at creating high-quality Claude Code SKILL.md files.
+
+You will merge the following ${input.skills.length} SKILL.md files into a single, superior skill that combines the best elements of each.
+
+${skillsText}
+
+Requirements for the merged skill:
+1. Write a YAML frontmatter with: name, description, compatibility (claude-code-only), allowed-tools (union of all source skills)
+2. Combine the best instructions, workflows, and examples from all sources
+3. Remove redundancy while preserving unique value from each source
+4. Use clear headings, decision trees, and examples
+5. The result should be more comprehensive and actionable than any individual source
+${input.targetName ? `6. Use "${input.targetName}" as the skill name` : ""}
+${input.targetDescription ? `7. Use this description: "${input.targetDescription}"` : ""}
+
+Output ONLY the merged SKILL.md content (starting with ---), no explanations.`;
+
+        const response = await invokeLLM({
+          messages: [
+            { role: "system", content: "You are an expert Claude Code skill author. Output only valid SKILL.md content." },
+            { role: "user", content: prompt },
+          ],
+        });
+
+        const mergedRaw = (response as { choices: { message: { content: string } }[] }).choices?.[0]?.message?.content ?? "";
+        if (!mergedRaw.trim()) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AIがコンテンツを生成できませんでした" });
+
+        const parsed = parseSkillMd(mergedRaw);
+        const allowedTools = (parsed.frontmatter["allowed-tools"] ?? "")
+          .split(/[,\s]+/).map((t) => t.trim()).filter(Boolean);
+        const tags = mapAllowedToolsToTags(allowedTools, parsed.description);
+
+        // Save merged skill to DB
+        const skillId = nanoid();
+        const versionId = nanoid();
+        const now = new Date();
+        const name = input.targetName ?? parsed.name;
+        const description = input.targetDescription ?? parsed.description;
+
+        await createSkill({
+          id: skillId,
+          name,
+          description,
+          category: parsed.category,
+          authorId: ctx.user.id,
+          isLocal: true,
+          isPublic: false,
+          tags: JSON.stringify(tags),
+          allowedTools: JSON.stringify(allowedTools),
+          mergedFrom: JSON.stringify(input.skills.map((s) => s.name)),
+          currentVersionId: versionId,
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        await createSkillVersion({
+          id: versionId,
+          skillId,
+          version: "v1.0",
+          evolutionType: "create",
+          triggerType: "manual",
+          qualityScore: 90,
+          successRate: 100,
+          codeContent: mergedRaw,
+          changeLog: `AIマージ生成: ${input.skills.map((s) => s.name).join(" + ")}`,
+          createdAt: now,
+        });
+
+        return { success: true, skillId, name, mergedRaw, tags, allowedTools };
+      } catch (err) {
+        if (err instanceof TRPCError) throw err;
+        console.error(`[claude.mergeSkillsWithAI][${traceId}] Error:`, err);
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `AIマージに失敗しました: ${err instanceof Error ? err.message : String(err)}` });
+      }
+    }),
+
+  // ─── Diff Import ─────────────────────────────────────────────────────────
+  /** Import a SKILL.md as a new version of an existing skill (diff import) */
+  diffImport: protectedProcedure
+    .input(
+      z.object({
+        existingSkillId: z.string(),
+        raw: z.string().min(1).max(100_000),
+        changeLog: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const traceId = Math.random().toString(36).slice(2, 8).toUpperCase();
+      try {
+        const existing = await getSkillById(input.existingSkillId);
+        if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "スキルが見つかりません" });
+        if (existing.authorId !== ctx.user.id && ctx.user.role !== "admin") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "このスキルを更新する権限がありません" });
+        }
+
+        // Get current version to determine next version number
+        const versions = await getVersionsBySkill(input.existingSkillId);
+        const latestVersion = versions[0]?.version ?? "v1.0";
+        const nextVersion = bumpVersion(latestVersion);
+
+        const parsed = parseSkillMd(input.raw);
+        const allowedTools = (parsed.frontmatter["allowed-tools"] ?? "")
+          .split(/[,\s]+/).map((t) => t.trim()).filter(Boolean);
+        const tags = mapAllowedToolsToTags(allowedTools, parsed.description);
+
+        const versionId = nanoid();
+        const now = new Date();
+
+        await createSkillVersion({
+          id: versionId,
+          skillId: input.existingSkillId,
+          version: nextVersion,
+          parentId: versions[0]?.id,
+          evolutionType: "fix",
+          triggerType: "manual",
+          qualityScore: 85,
+          successRate: 100,
+          codeContent: input.raw,
+          changeLog: input.changeLog ?? `差分インポート: ${nextVersion}`,
+          createdAt: now,
+        });
+
+        // Update skill metadata with new version and tags
+        await updateSkill(input.existingSkillId, {
+          currentVersionId: versionId,
+          tags: JSON.stringify(tags),
+          allowedTools: JSON.stringify(allowedTools),
+          updatedAt: now,
+        });
+
+        return { success: true, skillId: input.existingSkillId, newVersion: nextVersion, versionId };
+      } catch (err) {
+        if (err instanceof TRPCError) throw err;
+        console.error(`[claude.diffImport][${traceId}] Error:`, err);
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `差分インポートに失敗しました: ${err instanceof Error ? err.message : String(err)}` });
+      }
+    }),
+
+  // ─── Auto-tag from GitHub ────────────────────────────────────────────────
+  /** Import skills fetched from GitHub into user's library (with auto-tagging & diff detection) */
+  importFromGithub: protectedProcedure
+    .input(
+      z.object({
+        skills: z.array(
+          z.object({
+            name: z.string(),
+            raw: z.string().max(100_000),
+            path: z.string(),
+            repoUrl: z.string(),
+          })
+        ).min(1).max(30),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const results: { name: string; skillId: string; version: string; action: "created" | "updated"; success: boolean; error?: string }[] = [];
+
+      for (const item of input.skills) {
+        try {
+          const parsed = parseSkillMd(item.raw);
+          const allowedTools = (parsed.frontmatter["allowed-tools"] ?? "")
+            .split(/[,\s]+/).map((t) => t.trim()).filter(Boolean);
+          const tags = mapAllowedToolsToTags(allowedTools, parsed.description);
+          const name = item.name !== "untitled-skill" ? item.name : parsed.name;
+          const now = new Date();
+
+          // Check if skill with same name already exists for this user
+          const existing = await findSkillByNameForUser(name, ctx.user.id);
+
+          if (existing) {
+            // Diff import: add as new version
+            const versions = await getVersionsBySkill(existing.id);
+            const latestVersion = versions[0]?.version ?? "v1.0";
+            const nextVersion = bumpVersion(latestVersion);
+            const versionId = nanoid();
+
+            await createSkillVersion({
+              id: versionId,
+              skillId: existing.id,
+              version: nextVersion,
+              parentId: versions[0]?.id,
+              evolutionType: "fix",
+              triggerType: "manual",
+              qualityScore: 85,
+              successRate: 100,
+              codeContent: item.raw,
+              changeLog: `GitHub同期更新: ${item.repoUrl}/${item.path}`,
+              createdAt: now,
+            });
+            await updateSkill(existing.id, {
+              currentVersionId: versionId,
+              tags: JSON.stringify(tags),
+              allowedTools: JSON.stringify(allowedTools),
+              sourceRepo: item.repoUrl,
+              sourceFile: item.path,
+              updatedAt: now,
+            });
+            results.push({ name, skillId: existing.id, version: nextVersion, action: "updated", success: true });
+          } else {
+            // New skill
+            const skillId = nanoid();
+            const versionId = nanoid();
+            await createSkill({
+              id: skillId,
+              name,
+              description: parsed.description,
+              category: parsed.category,
+              authorId: ctx.user.id,
+              isLocal: true,
+              isPublic: false,
+              tags: JSON.stringify(tags),
+              allowedTools: JSON.stringify(allowedTools),
+              sourceRepo: item.repoUrl,
+              sourceFile: item.path,
+              currentVersionId: versionId,
+              createdAt: now,
+              updatedAt: now,
+            });
+            await createSkillVersion({
+              id: versionId,
+              skillId,
+              version: "v1.0",
+              evolutionType: "create",
+              triggerType: "manual",
+              qualityScore: 80,
+              successRate: 100,
+              codeContent: item.raw,
+              changeLog: `GitHubからインポート: ${item.repoUrl}/${item.path}`,
+              createdAt: now,
+            });
+            results.push({ name, skillId, version: "v1.0", action: "created", success: true });
+          }
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          console.error(`[claude.importFromGithub] Failed for ${item.name}:`, errMsg);
+          results.push({ name: item.name, skillId: "", version: "", action: "created", success: false, error: errMsg });
+        }
+      }
+
+      const succeeded = results.filter((r) => r.success).length;
+      const created = results.filter((r) => r.action === "created" && r.success).length;
+      const updated = results.filter((r) => r.action === "updated" && r.success).length;
+      return { success: true, total: results.length, succeeded, failed: results.length - succeeded, created, updated, results };
+    }),
+
   /** Parse a .mcp.json or ~/.claude.json snippet and return server list */
   parseMcpConfig: protectedProcedure
     .input(z.object({ raw: z.string().min(1).max(200_000) }))
@@ -738,6 +1094,72 @@ export type AppRouter = typeof appRouter;
 // ─────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────
+/**
+ * Map allowed-tools list + description keywords to semantic OSM tags.
+ * This ensures skills are discoverable by tool type in the community search.
+ */
+function mapAllowedToolsToTags(allowedTools: string[], description: string): string[] {
+  const tags = new Set<string>();
+
+  // Direct tool-to-tag mapping
+  const toolTagMap: Record<string, string> = {
+    Read: "file-read",
+    Write: "file-write",
+    Edit: "file-edit",
+    Bash: "shell",
+    Glob: "file-search",
+    Grep: "text-search",
+    WebFetch: "web",
+    WebSearch: "web",
+    TodoRead: "task-management",
+    TodoWrite: "task-management",
+    NotebookRead: "notebook",
+    NotebookEdit: "notebook",
+    mcp__github: "github",
+    mcp__filesystem: "filesystem",
+    mcp__memory: "memory",
+    mcp__puppeteer: "browser-automation",
+    mcp__postgres: "database",
+    mcp__slack: "slack",
+  };
+
+  for (const tool of allowedTools) {
+    // Exact match
+    if (toolTagMap[tool]) {
+      tags.add(toolTagMap[tool]);
+      continue;
+    }
+    // Prefix match for mcp__ tools
+    if (tool.startsWith("mcp__")) {
+      tags.add("mcp");
+      const service = tool.replace("mcp__", "").split("__")[0];
+      if (service) tags.add(service);
+    }
+  }
+
+  // Keyword-based tags from description
+  const keywordTagMap: [RegExp, string][] = [
+    [/test|spec|vitest|jest|playwright/i, "testing"],
+    [/deploy|ci|cd|docker|kubernetes/i, "devops"],
+    [/api|rest|graphql|http|fetch/i, "api"],
+    [/database|sql|postgres|mysql|sqlite/i, "database"],
+    [/security|audit|vulnerability|pentest/i, "security"],
+    [/document|readme|markdown|write/i, "documentation"],
+    [/refactor|clean|lint|format/i, "code-quality"],
+    [/review|analyze|check/i, "analysis"],
+    [/git|github|commit|pr|pull request/i, "git"],
+    [/frontend|react|vue|css|html|ui/i, "frontend"],
+    [/backend|server|express|fastapi/i, "backend"],
+    [/cloudflare|aws|gcp|azure/i, "cloud"],
+  ];
+
+  for (const [re, tag] of keywordTagMap) {
+    if (re.test(description)) tags.add(tag);
+  }
+
+  return Array.from(tags);
+}
+
 function bumpVersion(version: string): string {
   const match = version.match(/^v(\d+)\.(\d+)(?:\.(\d+))?$/);
   if (!match) return "v1.1";
