@@ -19,6 +19,7 @@ import {
   XCircle, Zap,
 } from "lucide-react";
 import { useState } from "react";
+import { ViewToggle, useViewMode, type ViewMode } from "@/components/ViewToggle";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
@@ -119,9 +120,176 @@ function CreateSkillDialog({ onCreated }: { onCreated: () => void }) {
   );
 }
 
+// ─── MySkillsGrid ────────────────────────────────────────────────
+function MySkillsGrid({ children, viewMode }: { children: React.ReactNode; viewMode: ViewMode }) {
+  if (viewMode === "list-lg" || viewMode === "list-sm") {
+    return <div className="flex flex-col gap-2">{children}</div>;
+  }
+  if (viewMode === "tile-sm") {
+    return <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">{children}</div>;
+  }
+  return <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{children}</div>;
+}
+
+// ─── MySkillCard ──────────────────────────────────────────────────
+interface MySkillCardProps {
+  skill: {
+    id: string;
+    name: string;
+    description: string | null;
+    category: string | null;
+    tags: string | null;
+    isPublic: boolean;
+    updatedAt: Date;
+  };
+  tags: string[];
+  viewMode: ViewMode;
+  onNavigate: (path: string) => void;
+  onUpload: (id: string) => void;
+  onDelete: (id: string) => void;
+  uploadPending: boolean;
+  deletePending: boolean;
+}
+
+function MySkillCard({ skill, tags, viewMode, onNavigate, onUpload, onDelete, uploadPending, deletePending }: MySkillCardProps) {
+  const menu = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+        <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity">
+          <MoreHorizontal className="w-3.5 h-3.5" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+        <DropdownMenuItem onClick={() => onNavigate(`/skills/${skill.id}`)}>
+          <Eye className="mr-2 h-3.5 w-3.5" />詳細を見る
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onNavigate(`/genealogy/${skill.id}`)}>
+          <GitBranch className="mr-2 h-3.5 w-3.5" />系譜を見る
+        </DropdownMenuItem>
+        {!skill.isPublic && (
+          <DropdownMenuItem onClick={() => onUpload(skill.id)} disabled={uploadPending}>
+            <Globe className="mr-2 h-3.5 w-3.5" />スキル広場に公開
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem onClick={() => onDelete(skill.id)} disabled={deletePending} className="text-destructive focus:text-destructive">
+          <Trash2 className="mr-2 h-3.5 w-3.5" />削除
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  if (viewMode === "list-lg") {
+    return (
+      <Card className="bg-card border-border card-hover cursor-pointer group" onClick={() => onNavigate(`/skills/${skill.id}`)}
+      >
+        <CardContent className="p-4">
+          <div className="flex items-center gap-4">
+            <div className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+              <Zap className="w-4 h-4 text-primary" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-0.5">
+                <p className="text-sm font-semibold">{skill.name}</p>
+                {skill.category && <Badge variant="outline" className="text-[10px] px-1.5 py-0">{skill.category}</Badge>}
+                {skill.isPublic ? <><Globe className="w-3 h-3 text-primary" /></> : <><Lock className="w-3 h-3 text-muted-foreground" /></>}
+              </div>
+              <p className="text-xs text-muted-foreground line-clamp-1">{skill.description ?? "説明なし"}</p>
+              <div className="flex items-center gap-2 mt-1">
+                {tags.slice(0, 4).map((tag) => <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-muted/50 text-muted-foreground">#{tag}</span>)}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 text-[10px] text-muted-foreground">
+              <Clock className="w-3 h-3" />
+              {formatDistanceToNow(new Date(skill.updatedAt), { addSuffix: true, locale: ja })}
+              {menu}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (viewMode === "list-sm") {
+    return (
+      <div className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border bg-card hover:bg-muted/20 transition-colors cursor-pointer group" onClick={() => onNavigate(`/skills/${skill.id}`)}
+      >
+        <div className="w-6 h-6 rounded bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+          <Zap className="w-3 h-3 text-primary" />
+        </div>
+        <p className="text-xs font-medium truncate flex-1">{skill.name}</p>
+        {skill.category && <Badge variant="outline" className="text-[10px] px-1.5 py-0 hidden sm:block shrink-0">{skill.category}</Badge>}
+        <span className="text-[10px] text-muted-foreground hidden md:block shrink-0">
+          {formatDistanceToNow(new Date(skill.updatedAt), { addSuffix: true, locale: ja })}
+        </span>
+        {menu}
+      </div>
+    );
+  }
+
+  if (viewMode === "tile-sm") {
+    return (
+      <Card className="bg-card border-border card-hover cursor-pointer group" onClick={() => onNavigate(`/skills/${skill.id}`)}
+      >
+        <CardContent className="p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-6 h-6 rounded bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+              <Zap className="w-3 h-3 text-primary" />
+            </div>
+            <p className="text-xs font-semibold truncate flex-1">{skill.name}</p>
+            {menu}
+          </div>
+          <p className="text-[10px] text-muted-foreground line-clamp-2 mb-1">{skill.description ?? "説明なし"}</p>
+          <div className="text-[10px] text-muted-foreground flex items-center gap-1">
+            <Clock className="w-3 h-3" />
+            {formatDistanceToNow(new Date(skill.updatedAt), { addSuffix: true, locale: ja })}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // tile-lg
+  return (
+    <Card className="bg-card border-border card-hover cursor-pointer group" onClick={() => onNavigate(`/skills/${skill.id}`)}
+    >
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between mb-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+              <Zap className="w-4 h-4 text-primary" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold truncate">{skill.name}</p>
+              {skill.category && <Badge variant="outline" className="text-[10px] px-1.5 py-0 mt-0.5">{skill.category}</Badge>}
+            </div>
+          </div>
+          {menu}
+        </div>
+        <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{skill.description ?? "説明なし"}</p>
+        {tags.length > 0 && (
+          <div className="flex flex-wrap gap-1 mb-3">
+            {tags.slice(0, 3).map((tag) => <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-muted/50 text-muted-foreground">#{tag}</span>)}
+            {tags.length > 3 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted/50 text-muted-foreground">+{tags.length - 3}</span>}
+          </div>
+        )}
+        <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+          <div className="flex items-center gap-1">
+            {skill.isPublic ? <><Globe className="w-3 h-3" />公開</> : <><Lock className="w-3 h-3" />非公開</>}
+          </div>
+          <div className="flex items-center gap-1">
+            <Clock className="w-3 h-3" />
+            {formatDistanceToNow(new Date(skill.updatedAt), { addSuffix: true, locale: ja })}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── Skills List Tab ─────────────────────────────────────────────
 function SkillsListTab() {
   const [search, setSearch] = useState("");
+  const [viewMode, setViewMode] = useViewMode("myskills-view-mode", "tile-lg");
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
 
@@ -147,13 +315,16 @@ function SkillsListTab() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="スキルを検索..." className="pl-9 bg-input border-border" />
         </div>
+        <ViewToggle value={viewMode} onChange={setViewMode} />
         <CreateSkillDialog onCreated={() => utils.skills.list.invalidate()} />
       </div>
 
       {skillsQuery.isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[...Array(6)].map((_, i) => <div key={i} className="h-40 rounded-xl shimmer" />)}
-        </div>
+        <MySkillsGrid viewMode={viewMode}>
+          {[...Array(viewMode === "tile-sm" ? 12 : viewMode === "list-sm" ? 8 : 6)].map((_, i) => (
+            <div key={i} className={`rounded-xl shimmer ${viewMode === "list-sm" ? "h-10" : viewMode === "tile-sm" ? "h-32" : "h-40"}`} />
+          ))}
+        </MySkillsGrid>
       ) : filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <div className="w-16 h-16 rounded-2xl bg-muted/50 flex items-center justify-center mb-4">
@@ -164,70 +335,24 @@ function SkillsListTab() {
           <CreateSkillDialog onCreated={() => utils.skills.list.invalidate()} />
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <MySkillsGrid viewMode={viewMode}>
           {filtered.map((skill) => {
             const tags: string[] = skill.tags ? (() => { try { return JSON.parse(skill.tags); } catch { return []; } })() : [];
             return (
-              <Card key={skill.id} className="bg-card border-border card-hover cursor-pointer group" onClick={() => setLocation(`/skills/${skill.id}`)}>
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
-                        <Zap className="w-4 h-4 text-primary" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold truncate">{skill.name}</p>
-                        {skill.category && <Badge variant="outline" className="text-[10px] px-1.5 py-0 mt-0.5">{skill.category}</Badge>}
-                      </div>
-                    </div>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <MoreHorizontal className="w-3.5 h-3.5" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                        <DropdownMenuItem onClick={() => setLocation(`/skills/${skill.id}`)}>
-                          <Eye className="mr-2 h-3.5 w-3.5" />詳細を見る
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setLocation(`/genealogy/${skill.id}`)}>
-                          <GitBranch className="mr-2 h-3.5 w-3.5" />系譜を見る
-                        </DropdownMenuItem>
-                        {!skill.isPublic && (
-                          <DropdownMenuItem
-                            onClick={() => { if (confirm(`「${skill.name}」をコミュニティに公開しますか？`)) uploadMutation.mutate({ skillId: skill.id }); }}
-                            disabled={uploadMutation.isPending}
-                          >
-                            <Globe className="mr-2 h-3.5 w-3.5" />スキル広場に公開
-                          </DropdownMenuItem>
-                        )}
-                        <DropdownMenuItem onClick={() => { if (confirm(`「${skill.name}」を削除しますか？`)) deleteMutation.mutate({ id: skill.id }); }} className="text-destructive focus:text-destructive">
-                          <Trash2 className="mr-2 h-3.5 w-3.5" />削除
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                  <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{skill.description ?? "説明なし"}</p>
-                  {tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mb-3">
-                      {tags.slice(0, 3).map((tag) => <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-muted/50 text-muted-foreground">#{tag}</span>)}
-                      {tags.length > 3 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted/50 text-muted-foreground">+{tags.length - 3}</span>}
-                    </div>
-                  )}
-                  <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                    <div className="flex items-center gap-1">
-                      {skill.isPublic ? <><Globe className="w-3 h-3" />公開</> : <><Lock className="w-3 h-3" />非公開</>}
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      {formatDistanceToNow(new Date(skill.updatedAt), { addSuffix: true, locale: ja })}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+              <MySkillCard
+                key={skill.id}
+                skill={skill}
+                tags={tags}
+                viewMode={viewMode}
+                onNavigate={(path) => setLocation(path)}
+                onUpload={(id) => { if (confirm(`「${skill.name}」をコミュニティに公開しますか？`)) uploadMutation.mutate({ skillId: id }); }}
+                onDelete={(id) => { if (confirm(`「${skill.name}」を削除しますか？`)) deleteMutation.mutate({ id }); }}
+                uploadPending={uploadMutation.isPending}
+                deletePending={deleteMutation.isPending}
+              />
             );
           })}
-        </div>
+        </MySkillsGrid>
       )}
     </div>
   );

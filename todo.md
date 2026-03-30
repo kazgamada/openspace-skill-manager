@@ -121,3 +121,12 @@
 - [x] Community.tsx: スキルカードに「同期済み」バッジ表示
 - [x] Vitest 48テスト全通過（community.listSources/addSource/syncSource/removeSource/syncStatus/updateSource テスト追加）
 - [x] TSエラー 0件確認
+
+## スキル同期バグ修正・レイアウト切り替えUI
+- [x] 同期バグ修正: Git Tree API（1リクエストで全SHA取得）に変更、200ms遅延削除、最大CONCURRENCY=10並列取得
+- [x] レイアウト切り替え: ViewToggleコンポーネント作成（リスト大・リスト小・タイル大・タイル小）
+- [x] レイアウト切り替え: useViewModeフック（localStorage永続化）
+- [x] レイアウト切り替え: Community.tsxに実装（スキル広場）
+- [x] レイアウト切り替え: MySkills.tsxに実装（マイスキル）
+- [x] MySkillCard・MySkillsGridコンポーネント分離（各モード対応）
+- [x] TSエラー 0件・Vitest 48件全通過

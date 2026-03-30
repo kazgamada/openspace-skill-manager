@@ -1,15 +1,15 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Search, Star, Download, Zap, Globe, Filter,
   CheckCircle2, TrendingUp, Award, Github, AlertCircle,
-  RefreshCw, Plus, Trash2, Clock, Database, Activity,
-  ChevronRight, Settings2, ExternalLink,
+  RefreshCw, Plus, Clock, Database, Settings2,
+  ChevronRight, ExternalLink,
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { ViewToggle, useViewMode, type ViewMode } from "@/components/ViewToggle";
 
 const CATEGORIES = ["all", "web", "search", "data", "auth", "ai", "util", "testing", "security", "frontend", "backend", "devops", "agent", "language", "framework", "database", "research"];
 
@@ -70,7 +71,6 @@ function AddSourceDialog({ open, onClose }: { open: boolean; onClose: () => void
     onError: (e) => toast.error(e.message),
   });
 
-  // everything-claude-code のプリセット
   const applyPreset = () => {
     setForm({
       name: "everything-claude-code",
@@ -94,7 +94,6 @@ function AddSourceDialog({ open, onClose }: { open: boolean; onClose: () => void
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          {/* プリセットボタン */}
           <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/5 border border-primary/20">
             <Github className="w-4 h-4 text-primary shrink-0" />
             <div className="flex-1 min-w-0">
@@ -162,9 +161,8 @@ function SourcesTab() {
   const { data: sources = [], isLoading } = trpc.community.listSources.useQuery();
 
   const syncMutation = trpc.community.syncSource.useMutation({
-    onSuccess: (_, vars) => {
+    onSuccess: () => {
       toast.success("同期を開始しました");
-      // 3秒後にステータスを再取得
       setTimeout(() => utils.community.listSources.invalidate(), 3000);
       setTimeout(() => utils.community.listSources.invalidate(), 8000);
       setTimeout(() => {
@@ -232,70 +230,60 @@ function SourcesTab() {
                     <p className="text-[10px] text-muted-foreground font-mono truncate">
                       {source.repoOwner}/{source.repoName} · {source.skillsPath} · {source.branch}
                     </p>
-
-                    {/* 統計 */}
                     <div className="flex items-center gap-4 mt-2 text-[10px] text-muted-foreground">
                       <span className="flex items-center gap-1">
                         <Database className="w-3 h-3" />
                         {source.totalSkills} スキル
                       </span>
-                      {source.newSkillsLastSync > 0 && (
+                      {source.newSkillsLastSync ? (
                         <span className="flex items-center gap-1 text-emerald-400">
                           <Plus className="w-3 h-3" />
                           {source.newSkillsLastSync} 新規
                         </span>
-                      )}
-                      {source.updatedSkillsLastSync > 0 && (
-                        <span className="flex items-center gap-1 text-blue-400">
-                          <Activity className="w-3 h-3" />
-                          {source.updatedSkillsLastSync} 更新
-                        </span>
-                      )}
+                      ) : null}
                       {source.lastSyncedAt && (
                         <span className="flex items-center gap-1">
                           <Clock className="w-3 h-3" />
                           {new Date(source.lastSyncedAt).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                         </span>
                       )}
-                      {source.autoSync && (
-                        <span className="flex items-center gap-1 text-primary/70">
-                          <RefreshCw className="w-3 h-3" />
-                          {source.syncIntervalHours}h毎に自動同期
-                        </span>
-                      )}
                     </div>
-
                     {source.lastSyncError && (
-                      <p className="text-[10px] text-rose-400 mt-1 truncate">
-                        <AlertCircle className="w-3 h-3 inline mr-1" />
-                        {source.lastSyncError}
-                      </p>
+                      <p className="text-[10px] text-rose-400 mt-1 truncate">{source.lastSyncError}</p>
                     )}
                   </div>
-
-                  {/* アクション */}
                   <div className="flex items-center gap-1.5 shrink-0">
                     <Button
-                      size="sm"
+                      size="icon"
                       variant="outline"
-                      className="h-7 text-[10px] gap-1 px-2.5"
-                      disabled={source.lastSyncStatus === "syncing" || syncMutation.isPending}
+                      className="h-7 w-7"
                       onClick={() => syncMutation.mutate({ id: source.id })}
+                      disabled={syncMutation.isPending || source.lastSyncStatus === "syncing"}
+                      title="手動同期"
                     >
-                      <RefreshCw className={`w-3 h-3 ${source.lastSyncStatus === "syncing" ? "animate-spin" : ""}`} />
-                      同期
+                      <RefreshCw className={`w-3.5 h-3.5 ${source.lastSyncStatus === "syncing" ? "animate-spin" : ""}`} />
                     </Button>
                     <Button
-                      size="sm"
+                      size="icon"
                       variant="outline"
-                      className="h-7 w-7 p-0 text-rose-400 hover:text-rose-300 hover:border-rose-500/40"
+                      className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                      onClick={() => window.open(`https://github.com/${source.repoOwner}/${source.repoName}`, "_blank")}
+                      title="GitHubで開く"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="outline"
+                      className="h-7 w-7 text-rose-400 hover:text-rose-300 hover:border-rose-500/40"
                       onClick={() => {
-                        if (confirm(`「${source.name}」を削除しますか？\n関連するコミュニティスキルはソース情報が解除されます。`)) {
+                        if (confirm(`「${source.name}」を削除しますか？同期済みスキルは残ります。`)) {
                           removeMutation.mutate({ id: source.id });
                         }
                       }}
+                      title="削除"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
                     </Button>
                   </div>
                 </div>
@@ -305,7 +293,6 @@ function SourcesTab() {
         </div>
       )}
 
-      {/* 仕組みの説明 */}
       <Card className="bg-muted/20 border-border/50">
         <CardContent className="p-4">
           <h3 className="text-xs font-semibold mb-2 flex items-center gap-1.5">
@@ -315,19 +302,15 @@ function SourcesTab() {
           <div className="space-y-1.5 text-[10px] text-muted-foreground">
             <div className="flex items-start gap-2">
               <ChevronRight className="w-3 h-3 text-primary shrink-0 mt-0.5" />
-              <span>GitHub Contents API でスキルディレクトリ一覧を取得し、各 SKILL.md の <span className="font-mono text-foreground/70">blob SHA</span> で変更を検知</span>
+              <span>Git Tree API で1リクエストにより全ファイルの <span className="font-mono text-foreground/70">blob SHA</span> を一括取得</span>
             </div>
             <div className="flex items-start gap-2">
               <ChevronRight className="w-3 h-3 text-primary shrink-0 mt-0.5" />
-              <span>SHA が変わったスキルのみ内容を再取得し、DB を upsert（不変スキルは API コール不要）</span>
+              <span>SHA が変わったスキルのみ内容を再取得（最大10並列）し、DB を upsert</span>
             </div>
             <div className="flex items-start gap-2">
               <ChevronRight className="w-3 h-3 text-primary shrink-0 mt-0.5" />
               <span>サーバー起動 30 秒後に初回同期を実行し、以降は設定した間隔（デフォルト 6 時間）で自動同期</span>
-            </div>
-            <div className="flex items-start gap-2">
-              <ChevronRight className="w-3 h-3 text-primary shrink-0 mt-0.5" />
-              <span>新規スキル追加・既存スキル更新があると WebSocket で <span className="font-mono text-foreground/70">skills_synced</span> イベントをブロードキャスト</span>
             </div>
           </div>
         </CardContent>
@@ -338,12 +321,227 @@ function SourcesTab() {
   );
 }
 
+// ─── スキルカード（各レイアウト対応） ────────────────────────────────────────
+
+interface SkillCardProps {
+  skill: {
+    id: string;
+    name: string;
+    description: string | null;
+    author: string | null;
+    category: string | null;
+    tags: string | null;
+    stars: number | null;
+    downloads: number | null;
+    qualityScore: number | null;
+    generationCount: number | null;
+    isInstalled: boolean | null;
+    sourceId?: number | null;
+  };
+  viewMode: ViewMode;
+  onInstall: (id: string) => void;
+  isInstalling: boolean;
+}
+
+function SkillCard({ skill, viewMode, onInstall, isInstalling }: SkillCardProps) {
+  const tags: string[] = skill.tags ? JSON.parse(skill.tags) : [];
+  const isSynced = !!(skill as any).sourceId;
+
+  if (viewMode === "list-lg") {
+    // リスト大: 横長カード、詳細情報フル表示
+    return (
+      <Card className="bg-card border-border card-hover">
+        <CardContent className="p-4">
+          <div className="flex items-start gap-4">
+            <div className="w-10 h-10 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+              <Zap className="w-5 h-5 text-primary" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <p className="text-sm font-semibold">{skill.name}</p>
+                {isSynced && (
+                  <Badge variant="outline" className="text-[9px] border-primary/30 text-primary/70 h-4 px-1">
+                    <Github className="w-2.5 h-2.5 mr-0.5" />同期
+                  </Badge>
+                )}
+                {skill.isInstalled && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                {skill.category && (
+                  <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{skill.category}</Badge>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground line-clamp-2 mb-2">{skill.description}</p>
+              <div className="flex items-center gap-4 text-[10px] text-muted-foreground">
+                <span className="text-muted-foreground/60">{skill.author}</span>
+                <span className="flex items-center gap-1"><Star className="w-3 h-3 text-amber-400" />{skill.stars}</span>
+                <span className="flex items-center gap-1"><Download className="w-3 h-3" />{skill.downloads}</span>
+                <span>Gen {skill.generationCount}</span>
+                {tags.slice(0, 4).map((tag) => (
+                  <span key={tag} className="px-1.5 py-0.5 rounded bg-muted/50">#{tag}</span>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center gap-3 shrink-0">
+              <div className="w-24">
+                <QualityBar score={skill.qualityScore} />
+              </div>
+              <Button
+                size="sm"
+                variant={skill.isInstalled ? "outline" : "default"}
+                className="h-7 text-[10px] px-3 gap-1"
+                onClick={() => { if (!skill.isInstalled) onInstall(skill.id); }}
+                disabled={!!skill.isInstalled || isInstalling}
+              >
+                {skill.isInstalled ? <><CheckCircle2 className="w-3 h-3" /> 済</> : <><Download className="w-3 h-3" /> インストール</>}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (viewMode === "list-sm") {
+    // リスト小: コンパクトな1行表示
+    return (
+      <div className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border bg-card hover:bg-muted/20 transition-colors">
+        <div className="w-6 h-6 rounded bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+          <Zap className="w-3 h-3 text-primary" />
+        </div>
+        <div className="flex-1 min-w-0 flex items-center gap-2">
+          <p className="text-xs font-medium truncate">{skill.name}</p>
+          {isSynced && <Github className="w-3 h-3 text-primary/50 shrink-0" />}
+          {skill.isInstalled && <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />}
+          <p className="text-[10px] text-muted-foreground truncate hidden sm:block">{skill.description}</p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0 text-[10px] text-muted-foreground">
+          <span className="hidden md:flex items-center gap-1"><Star className="w-3 h-3 text-amber-400" />{skill.stars}</span>
+          <span className="hidden md:block w-16"><QualityBar score={skill.qualityScore} /></span>
+          <Button
+            size="sm"
+            variant={skill.isInstalled ? "outline" : "default"}
+            className="h-6 text-[10px] px-2 gap-0.5"
+            onClick={() => { if (!skill.isInstalled) onInstall(skill.id); }}
+            disabled={!!skill.isInstalled || isInstalling}
+          >
+            {skill.isInstalled ? "済" : <><Download className="w-3 h-3" /></>}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (viewMode === "tile-sm") {
+    // タイル小: 小さいカード、最小情報
+    return (
+      <Card className="bg-card border-border card-hover">
+        <CardContent className="p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-6 h-6 rounded bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+              <Zap className="w-3 h-3 text-primary" />
+            </div>
+            <p className="text-xs font-semibold truncate flex-1">{skill.name}</p>
+            {skill.isInstalled && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+          </div>
+          <p className="text-[10px] text-muted-foreground line-clamp-2 mb-2">{skill.description}</p>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+              <Star className="w-3 h-3 text-amber-400" />{skill.stars}
+              {isSynced && <Github className="w-3 h-3 text-primary/50" />}
+            </div>
+            <Button
+              size="sm"
+              variant={skill.isInstalled ? "outline" : "default"}
+              className="h-6 text-[10px] px-2"
+              onClick={() => { if (!skill.isInstalled) onInstall(skill.id); }}
+              disabled={!!skill.isInstalled || isInstalling}
+            >
+              {skill.isInstalled ? "済" : <Download className="w-3 h-3" />}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // tile-lg（デフォルト）: 標準カード
+  return (
+    <Card className="bg-card border-border card-hover">
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between mb-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+              <Zap className="w-4 h-4 text-primary" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold truncate">{skill.name}</p>
+              <p className="text-[10px] text-muted-foreground">{skill.author}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            {isSynced && (
+              <Badge variant="outline" className="text-[9px] border-primary/30 text-primary/70 h-4 px-1">
+                <Github className="w-2.5 h-2.5 mr-0.5" />同期
+              </Badge>
+            )}
+            {skill.isInstalled && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{skill.description}</p>
+        <div className="mb-3">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] text-muted-foreground">品質スコア</span>
+            {(skill.qualityScore ?? 0) >= 85 && <Award className="w-3 h-3 text-amber-400" />}
+          </div>
+          <QualityBar score={skill.qualityScore} />
+        </div>
+        {tags.length > 0 && (
+          <div className="flex flex-wrap gap-1 mb-3">
+            {tags.slice(0, 3).map((tag) => (
+              <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-muted/50 text-muted-foreground">#{tag}</span>
+            ))}
+          </div>
+        )}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+            <span className="flex items-center gap-1"><Star className="w-3 h-3 text-amber-400" />{skill.stars}</span>
+            <span className="flex items-center gap-1"><Download className="w-3 h-3" />{skill.downloads}</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted/50">Gen {skill.generationCount}</span>
+          </div>
+          <Button
+            size="sm"
+            variant={skill.isInstalled ? "outline" : "default"}
+            className="h-7 text-[10px] px-3 gap-1"
+            onClick={() => { if (!skill.isInstalled) onInstall(skill.id); }}
+            disabled={!!skill.isInstalled || isInstalling}
+          >
+            {skill.isInstalled ? <><CheckCircle2 className="w-3 h-3" /> インストール済</> : <><Download className="w-3 h-3" /> インストール</>}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── グリッドコンテナ（viewModeに応じてclassを変える） ────────────────────────
+
+function SkillsGrid({ children, viewMode }: { children: React.ReactNode; viewMode: ViewMode }) {
+  if (viewMode === "list-lg" || viewMode === "list-sm") {
+    return <div className="flex flex-col gap-2">{children}</div>;
+  }
+  if (viewMode === "tile-sm") {
+    return <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">{children}</div>;
+  }
+  // tile-lg
+  return <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{children}</div>;
+}
+
 // ─── メインコンポーネント ────────────────────────────────────────────────────
 
 export default function Community() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
   const [searchInput, setSearchInput] = useState("");
+  const [viewMode, setViewMode] = useViewMode("community-view-mode", "tile-lg");
   const utils = trpc.useUtils();
   const [, setLocation] = useLocation();
   const { data: integrations } = trpc.settings.getIntegrations.useQuery();
@@ -354,7 +552,7 @@ export default function Community() {
   const communityQuery = trpc.community.list.useQuery({
     search: search || undefined,
     category: category !== "all" ? category : undefined,
-    limit: 24,
+    limit: 100,
   });
 
   const installMutation = trpc.community.install.useMutation({
@@ -422,7 +620,7 @@ export default function Community() {
 
           {/* ─── スキル一覧タブ ─── */}
           <TabsContent value="browse" className="mt-4 space-y-4">
-            {/* Search & Filter */}
+            {/* Search & Filter & ViewToggle */}
             <div className="flex items-center gap-3">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -442,6 +640,7 @@ export default function Community() {
                 <TrendingUp className="w-3.5 h-3.5" />
                 {skills.length} 件
               </div>
+              <ViewToggle value={viewMode} onChange={setViewMode} />
             </div>
 
             {/* Category Filter */}
@@ -464,11 +663,11 @@ export default function Community() {
 
             {/* Skills Grid */}
             {communityQuery.isLoading ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {[...Array(6)].map((_, i) => (
-                  <div key={i} className="h-52 rounded-xl shimmer" />
+              <SkillsGrid viewMode={viewMode}>
+                {[...Array(viewMode === "tile-sm" ? 12 : viewMode === "list-sm" ? 8 : 6)].map((_, i) => (
+                  <div key={i} className={`rounded-xl shimmer ${viewMode === "list-sm" ? "h-10" : viewMode === "tile-sm" ? "h-32" : "h-52"}`} />
                 ))}
-              </div>
+              </SkillsGrid>
             ) : skills.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <Globe className="w-12 h-12 text-muted-foreground/30 mb-3" />
@@ -478,101 +677,17 @@ export default function Community() {
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {skills.map((skill) => {
-                  const tags: string[] = skill.tags ? JSON.parse(skill.tags) : [];
-                  return (
-                    <Card key={skill.id} className="bg-card border-border card-hover">
-                      <CardContent className="p-4">
-                        {/* Header */}
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
-                              <Zap className="w-4 h-4 text-primary" />
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-sm font-semibold truncate">{skill.name}</p>
-                              <p className="text-[10px] text-muted-foreground">{skill.author}</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            {(skill as any).sourceId && (
-                              <Badge variant="outline" className="text-[9px] border-primary/30 text-primary/70 h-4 px-1">
-                                <Github className="w-2.5 h-2.5 mr-0.5" />同期
-                              </Badge>
-                            )}
-                            {skill.isInstalled && (
-                              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                            )}
-                          </div>
-                        </div>
-
-                        <p className="text-xs text-muted-foreground line-clamp-2 mb-3">
-                          {skill.description}
-                        </p>
-
-                        {/* Quality */}
-                        <div className="mb-3">
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-[10px] text-muted-foreground">品質スコア</span>
-                            <div className="flex items-center gap-1">
-                              {(skill.qualityScore ?? 0) >= 85 && (
-                                <Award className="w-3 h-3 text-amber-400" />
-                              )}
-                            </div>
-                          </div>
-                          <QualityBar score={skill.qualityScore} />
-                        </div>
-
-                        {/* Tags */}
-                        {tags.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mb-3">
-                            {tags.slice(0, 3).map((tag) => (
-                              <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-muted/50 text-muted-foreground">
-                                #{tag}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Stats & Action */}
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
-                            <span className="flex items-center gap-1">
-                              <Star className="w-3 h-3 text-amber-400" />
-                              {skill.stars}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <Download className="w-3 h-3" />
-                              {skill.downloads}
-                            </span>
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted/50">
-                              Gen {skill.generationCount}
-                            </span>
-                          </div>
-                          <Button
-                            size="sm"
-                            variant={skill.isInstalled ? "outline" : "default"}
-                            className="h-7 text-[10px] px-3 gap-1"
-                            onClick={() => {
-                              if (!skill.isInstalled) {
-                                installMutation.mutate({ communitySkillId: skill.id });
-                              }
-                            }}
-                            disabled={skill.isInstalled || installMutation.isPending}
-                          >
-                            {skill.isInstalled ? (
-                              <><CheckCircle2 className="w-3 h-3" /> インストール済</>
-                            ) : (
-                              <><Download className="w-3 h-3" /> インストール</>
-                            )}
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
+              <SkillsGrid viewMode={viewMode}>
+                {skills.map((skill) => (
+                  <SkillCard
+                    key={skill.id}
+                    skill={skill}
+                    viewMode={viewMode}
+                    onInstall={(id) => installMutation.mutate({ communitySkillId: id })}
+                    isInstalling={installMutation.isPending}
+                  />
+                ))}
+              </SkillsGrid>
             )}
           </TabsContent>
 

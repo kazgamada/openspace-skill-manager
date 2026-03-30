@@ -2,11 +2,11 @@
  * github-sync.ts
  * GitHub リポジトリからスキル（SKILL.md）を動的に取得・差分同期するモジュール。
  *
- * 仕組み:
- *  1. GitHub Contents API でスキルディレクトリ一覧を取得
- *  2. 各サブディレクトリの SKILL.md を取得（blob SHA で変更検知）
- *  3. SHA が変わっていれば community_skills を upsert
- *  4. skill_sources の統計・ステータスを更新
+ * 高速化戦略:
+ *  1. Git Tree API（recursive=1）で1リクエストにより全ファイルのSHAを一括取得
+ *  2. SHA比較で変更があったスキルのみ内容を取得（差分同期）
+ *  3. Promise.allSettled で最大CONCURRENCY並列取得
+ *  4. DB upsert は Promise.allSettled で並列実行
  */
 
 import { getDb } from "./db";
@@ -22,12 +22,11 @@ interface GitHubTreeItem {
   url: string;
 }
 
-interface GitHubContentsItem {
-  name: string;
-  path: string;
+interface GitHubTreeResponse {
   sha: string;
-  type: "file" | "dir";
-  download_url: string | null;
+  url: string;
+  tree: GitHubTreeItem[];
+  truncated: boolean;
 }
 
 interface ParsedSkillMeta {
@@ -68,15 +67,16 @@ function parseSkillMd(content: string, fallbackName: string): ParsedSkillMeta {
   // カテゴリをスキル名から推定
   if (category === "general") {
     if (/tdd|test|spec|coverage/i.test(name)) category = "testing";
-    else if (/security|auth|safe/i.test(name)) category = "security";
-    else if (/frontend|react|vue|svelte|css|ui/i.test(name)) category = "frontend";
-    else if (/backend|api|server|rest|grpc/i.test(name)) category = "backend";
-    else if (/docker|deploy|k8s|kubernetes|ci|cd/i.test(name)) category = "devops";
-    else if (/agent|autonomous|loop|harness/i.test(name)) category = "agent";
+    else if (/security|auth|safe|phi|compliance/i.test(name)) category = "security";
+    else if (/frontend|react|vue|svelte|css|ui|nextjs|nuxt|liquid/i.test(name)) category = "frontend";
+    else if (/backend|api|server|rest|grpc|fastapi/i.test(name)) category = "backend";
+    else if (/docker|deploy|k8s|kubernetes|ci|cd|devops/i.test(name)) category = "devops";
+    else if (/agent|autonomous|loop|harness|agentic/i.test(name)) category = "agent";
     else if (/python|golang|rust|kotlin|swift|java|cpp|perl|php/i.test(name)) category = "language";
-    else if (/django|laravel|springboot|nextjs|nuxt/i.test(name)) category = "framework";
-    else if (/database|postgres|mysql|sql|migration/i.test(name)) category = "database";
-    else if (/research|market|investor|content/i.test(name)) category = "research";
+    else if (/django|laravel|springboot|rails|express/i.test(name)) category = "framework";
+    else if (/database|postgres|mysql|sql|migration|mongo/i.test(name)) category = "database";
+    else if (/research|market|investor|content|deep/i.test(name)) category = "research";
+    else if (/ai|llm|gpt|claude|gemini|embedding/i.test(name)) category = "ai";
   }
 
   return { name, description, tags, category };
@@ -85,7 +85,7 @@ function parseSkillMd(content: string, fallbackName: string): ParsedSkillMeta {
 // ─── GitHub API ヘルパー ──────────────────────────────────────────────────────
 
 const GITHUB_API = "https://api.github.com";
-const RATE_LIMIT_DELAY_MS = 200; // レート制限対策
+const CONCURRENCY = 10; // 並列取得数
 
 async function githubFetch(url: string, token?: string): Promise<Response> {
   const headers: Record<string, string> = {
@@ -96,8 +96,13 @@ async function githubFetch(url: string, token?: string): Promise<Response> {
   return fetch(url, { headers });
 }
 
-async function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+/** 配列をチャンクに分割 */
+function chunk<T>(arr: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
 }
 
 // ─── メイン同期関数 ───────────────────────────────────────────────────────────
@@ -122,7 +127,6 @@ export async function syncSkillSource(
     errors: [],
   };
 
-  // DB接続を取得
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
@@ -141,114 +145,131 @@ export async function syncSkillSource(
     .where(eq(skillSources.id, sourceId));
 
   try {
-    // スキルディレクトリ一覧を取得
-    const contentsUrl = `${GITHUB_API}/repos/${source.repoOwner}/${source.repoName}/contents/${source.skillsPath}?ref=${source.branch}`;
-    const contentsRes = await githubFetch(contentsUrl, token);
+    // ── Step 1: Git Tree API で全ファイルのSHAを一括取得（1リクエスト）──
+    const treeUrl = `${GITHUB_API}/repos/${source.repoOwner}/${source.repoName}/git/trees/${source.branch}?recursive=1`;
+    const treeRes = await githubFetch(treeUrl, token);
 
-    if (!contentsRes.ok) {
-      throw new Error(`GitHub API error: ${contentsRes.status} ${contentsRes.statusText}`);
+    if (!treeRes.ok) {
+      throw new Error(`GitHub Tree API error: ${treeRes.status} ${treeRes.statusText}`);
     }
 
-    const contents: GitHubContentsItem[] = await contentsRes.json();
-    const skillDirs = contents.filter((item) => item.type === "dir");
-    result.totalSkills = skillDirs.length;
+    const treeData: GitHubTreeResponse = await treeRes.json();
 
-    // 既存の community_skills を sourceId でまとめて取得（SHA比較用）
+    // skillsPath/*/SKILL.md にマッチするファイルを抽出
+    const skillsPath = source.skillsPath.replace(/\/$/, ""); // 末尾スラッシュ除去
+    const skillMdPattern = new RegExp(`^${skillsPath}/([^/]+)/SKILL\\.md$`);
+
+    const skillFiles = treeData.tree.filter(
+      (item) => item.type === "blob" && skillMdPattern.test(item.path)
+    );
+
+    result.totalSkills = skillFiles.length;
+    console.log(`[Sync] Source ${sourceId}: Found ${skillFiles.length} SKILL.md files in tree`);
+
+    if (skillFiles.length === 0) {
+      throw new Error(`No SKILL.md files found in ${skillsPath}/ (tree has ${treeData.tree.length} items, truncated=${treeData.truncated})`);
+    }
+
+    // ── Step 2: 既存スキルのSHAマップを取得（差分比較用）──
     const existing = await db
       .select({ id: communitySkills.id, upstreamSha: communitySkills.upstreamSha })
       .from(communitySkills)
       .where(eq(communitySkills.sourceId, sourceId));
-    const existingMap = new Map(existing.map((e: { id: string; upstreamSha: string | null }) => [e.id, e.upstreamSha]));
+    const existingMap = new Map(
+      existing.map((e: { id: string; upstreamSha: string | null }) => [e.id, e.upstreamSha])
+    );
 
-    // 各スキルディレクトリを処理
-    for (const dir of skillDirs) {
-      await delay(RATE_LIMIT_DELAY_MS);
+    // ── Step 3: 変更があったスキルのみ内容を取得（並列）──
+    const toUpdate = skillFiles.filter((file) => {
+      const match = file.path.match(skillMdPattern);
+      if (!match) return false;
+      const dirName = match[1];
+      const skillId = `src${sourceId}-${dirName}`.slice(0, 64);
+      return existingMap.get(skillId) !== file.sha; // SHA変更 or 新規
+    });
 
-      try {
-        // SKILL.md の blob SHA を取得（変更検知）
-        const skillMdUrl = `${GITHUB_API}/repos/${source.repoOwner}/${source.repoName}/contents/${source.skillsPath}/${dir.name}/SKILL.md?ref=${source.branch}`;
-        const skillMdRes = await githubFetch(skillMdUrl, token);
+    console.log(`[Sync] Source ${sourceId}: ${toUpdate.length} skills need update (${skillFiles.length - toUpdate.length} unchanged)`);
 
-        if (!skillMdRes.ok) continue; // SKILL.md が存在しないディレクトリはスキップ
+    // チャンク単位で並列取得
+    const batches = chunk(toUpdate, CONCURRENCY);
+    for (const batch of batches) {
+      await Promise.allSettled(
+        batch.map(async (file) => {
+          const match = file.path.match(skillMdPattern)!;
+          const dirName = match[1];
+          const skillId = `src${sourceId}-${dirName}`.slice(0, 64);
+          const isNew = !existingMap.has(skillId);
 
-        const skillMdMeta: GitHubContentsItem = await skillMdRes.json();
-        const currentSha = skillMdMeta.sha;
+          try {
+            // raw.githubusercontent.com から直接取得（APIコール節約）
+            const rawUrl = `https://raw.githubusercontent.com/${source.repoOwner}/${source.repoName}/${source.branch}/${file.path}`;
+            const rawRes = await githubFetch(rawUrl, token);
+            if (!rawRes.ok) {
+              result.errors.push(`${dirName}: HTTP ${rawRes.status}`);
+              return;
+            }
 
-        // ユニークIDを生成（source + ディレクトリ名）
-        const skillId = `src${sourceId}-${dir.name}`.slice(0, 64);
-        const existingSha = existingMap.get(skillId);
+            const content = await rawRes.text();
+            const meta = parseSkillMd(content, dirName);
+            const now = new Date();
 
-        // SHA が同じなら更新不要
-        if (existingSha === currentSha) continue;
+            await db
+              .insert(communitySkills)
+              .values({
+                id: skillId,
+                remoteId: `${source.repoOwner}/${source.repoName}/${file.path}`,
+                name: meta.name,
+                description: meta.description,
+                author: source.repoOwner,
+                category: meta.category,
+                tags: JSON.stringify(meta.tags),
+                stars: 0,
+                downloads: 0,
+                qualityScore: 75,
+                latestVersion: "v1.0.0",
+                generationCount: 1,
+                codePreview: content.slice(0, 500),
+                isInstalled: false,
+                sourceId: sourceId,
+                upstreamSha: file.sha,
+                lastSyncedAt: now,
+                cachedAt: now,
+              })
+              .onDuplicateKeyUpdate({
+                set: {
+                  name: meta.name,
+                  description: meta.description,
+                  category: meta.category,
+                  tags: JSON.stringify(meta.tags),
+                  codePreview: content.slice(0, 500),
+                  upstreamSha: file.sha,
+                  lastSyncedAt: now,
+                },
+              });
 
-        // SKILL.md の内容を取得
-        await delay(RATE_LIMIT_DELAY_MS);
-        const rawUrl =
-          skillMdMeta.download_url ||
-          `https://raw.githubusercontent.com/${source.repoOwner}/${source.repoName}/${source.branch}/${source.skillsPath}/${dir.name}/SKILL.md`;
-        const rawRes = await githubFetch(rawUrl, token);
-        if (!rawRes.ok) continue;
-
-        const content = await rawRes.text();
-        const meta = parseSkillMd(content, dir.name);
-
-        const now = new Date();
-        const isNew = !existingSha;
-
-        // upsert（INSERT ... ON DUPLICATE KEY UPDATE 相当）
-        await db
-          .insert(communitySkills)
-          .values({
-            id: skillId,
-            remoteId: `${source.repoOwner}/${source.repoName}/skills/${dir.name}`,
-            name: meta.name,
-            description: meta.description,
-            author: source.repoOwner,
-            category: meta.category,
-            tags: JSON.stringify(meta.tags),
-            stars: 0,
-            downloads: 0,
-            qualityScore: 75, // デフォルトスコア
-            latestVersion: "v1.0.0",
-            generationCount: 1,
-            codePreview: content.slice(0, 500),
-            isInstalled: false,
-            sourceId: sourceId,
-            upstreamSha: currentSha,
-            lastSyncedAt: now,
-            cachedAt: now,
-          })
-          .onDuplicateKeyUpdate({
-            set: {
-              name: meta.name,
-              description: meta.description,
-              category: meta.category,
-              tags: JSON.stringify(meta.tags),
-              codePreview: content.slice(0, 500),
-              upstreamSha: currentSha,
-              lastSyncedAt: now,
-            },
-          });
-
-        if (isNew) result.newSkills++;
-        else result.updatedSkills++;
-      } catch (err) {
-        result.errors.push(`${dir.name}: ${err instanceof Error ? err.message : String(err)}`);
-      }
+            if (isNew) result.newSkills++;
+            else result.updatedSkills++;
+          } catch (err) {
+            result.errors.push(`${dirName}: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        })
+      );
     }
 
-    // ソースの統計を更新
+    // ── Step 4: ソースの統計を更新 ──
     await db
       .update(skillSources)
       .set({
-        lastSyncStatus: "success",
+        lastSyncStatus: result.errors.length > 0 && result.newSkills + result.updatedSkills === 0 ? "error" : "success",
         lastSyncedAt: new Date(),
-        lastSyncError: null,
+        lastSyncError: result.errors.length > 0 ? result.errors.slice(0, 3).join("; ") : null,
         totalSkills: result.totalSkills,
         newSkillsLastSync: result.newSkills,
         updatedSkillsLastSync: result.updatedSkills,
       })
       .where(eq(skillSources.id, sourceId));
+
+    console.log(`[Sync] Source ${sourceId}: Done. new=${result.newSkills} updated=${result.updatedSkills} errors=${result.errors.length}`);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     result.errors.push(errorMsg);
