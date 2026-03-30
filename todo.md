@@ -74,3 +74,9 @@
 - [x] AdminSettings.tsx: 連携状況一覧（接続済み・最終テスト日時）表示
 - [x] server/routers.ts: 連携設定の保存・取得・テスト・切断ルーター実装
 - [x] drizzle/schema.ts: user_settingsテーブルにintegrations JSONカラム追加・マイグレーション完了
+
+## サイドバー第2階層ナビ再構成
+- [ ] DashboardLayout.tsx: サイドバーを第2階層構成に書き直し（ユーザー用「設定→連携」、管理者用「管理者パネル→アカウント・ユーザー管理・システム」）
+- [ ] AdminSettings.tsx: 上部タブを廃止しURLパラメーターでサイドバーと連動
+- [ ] UserSettings.tsx: ユーザー用設定ページ（連携タブのみ）を新規作成
+- [ ] App.tsx: /settings, /admin?tab=account, /admin?tab=users, /admin?tab=system のルート整理

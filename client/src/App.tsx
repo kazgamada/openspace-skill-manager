@@ -11,6 +11,7 @@ import SkillDetail from "./pages/SkillDetail";
 import Community from "./pages/Community";
 import Genealogy from "./pages/Genealogy";
 import AdminSettings from "./pages/AdminSettings";
+import UserSettings from "./pages/UserSettings";
 
 function Router() {
   return (
@@ -22,11 +23,14 @@ function Router() {
       <Route path="/community" component={Community} />
       <Route path="/genealogy" component={Genealogy} />
       <Route path="/genealogy/:skillId" component={Genealogy} />
+      {/* Admin routes */}
       <Route path="/admin" component={AdminSettings} />
-      <Route path="/settings" component={AdminSettings} />
-      <Route path="/health" component={AdminSettings} />
-      <Route path="/claude" component={AdminSettings} />
-      <Route path="/storage" component={AdminSettings} />
+      <Route path="/admin/account" component={AdminSettings} />
+      <Route path="/admin/users" component={AdminSettings} />
+      <Route path="/admin/system" component={AdminSettings} />
+      {/* User settings routes */}
+      <Route path="/settings" component={UserSettings} />
+      <Route path="/settings/integrations" component={UserSettings} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

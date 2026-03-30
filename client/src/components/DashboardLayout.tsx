@@ -24,14 +24,19 @@ import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import {
   Brain,
+  ChevronDown,
   ChevronRight,
   GitBranch,
   LayoutDashboard,
+  Link2,
   LogOut,
   PanelLeft,
   Settings,
   Shield,
   Store,
+  Users,
+  Cpu,
+  UserCircle,
   Zap,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
@@ -40,7 +45,7 @@ import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 
-// ─── Navigation structure (5 items only) ───────────────────────────────────
+// ─── Navigation structure ───────────────────────────────────────────────────
 const coreMenuItems = [
   { icon: LayoutDashboard, label: "ダッシュボード", path: "/dashboard" },
   { icon: Brain,           label: "マイスキル",     path: "/skills" },
@@ -48,8 +53,16 @@ const coreMenuItems = [
   { icon: GitBranch,       label: "スキル系譜",     path: "/genealogy" },
 ];
 
-const adminMenuItems = [
-  { icon: Shield,   label: "管理者パネル", path: "/admin" },
+// ユーザー用「設定」サブメニュー
+const userSettingsSubItems = [
+  { icon: Link2,       label: "連携",     path: "/settings/integrations" },
+];
+
+// 管理者パネルのサブメニュー
+const adminSubItems = [
+  { icon: UserCircle,  label: "アカウント", path: "/admin/account" },
+  { icon: Users,       label: "ユーザー管理", path: "/admin/users" },
+  { icon: Cpu,         label: "システム",   path: "/admin/system" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "osm-sidebar-width";
@@ -131,6 +144,20 @@ function DashboardLayoutContent({
   const isMobile = useIsMobile();
   const isAdmin = user?.role === "admin";
 
+  // 「設定」サブメニューの展開状態
+  const isSettingsActive = location.startsWith("/settings");
+  const [settingsOpen, setSettingsOpen] = useState(isSettingsActive);
+
+  // 「管理者パネル」サブメニューの展開状態
+  const isAdminActive = location.startsWith("/admin");
+  const [adminOpen, setAdminOpen] = useState(isAdminActive);
+
+  // ページ遷移で自動展開
+  useEffect(() => {
+    if (isSettingsActive) setSettingsOpen(true);
+    if (isAdminActive) setAdminOpen(true);
+  }, [isSettingsActive, isAdminActive]);
+
   useEffect(() => {
     if (isCollapsed) setIsResizing(false);
   }, [isCollapsed]);
@@ -157,8 +184,13 @@ function DashboardLayoutContent({
     };
   }, [isResizing, setSidebarWidth]);
 
-  const allItems = isAdmin ? [...coreMenuItems, ...adminMenuItems] : coreMenuItems;
-  const activeItem = allItems.find((item) => location.startsWith(item.path));
+  // アクティブラベル（モバイルヘッダー用）
+  const allPaths = [
+    ...coreMenuItems,
+    { path: "/settings", label: "設定" },
+    { path: "/admin", label: "管理者パネル" },
+  ];
+  const activeItem = allPaths.find((item) => location.startsWith(item.path));
 
   return (
     <>
@@ -192,6 +224,7 @@ function DashboardLayoutContent({
           {/* Nav */}
           <SidebarContent className="gap-0 py-2">
             <SidebarMenu className="px-2">
+
               {/* Core 4 items */}
               {coreMenuItems.map((item) => {
                 const isActive = location.startsWith(item.path);
@@ -210,7 +243,60 @@ function DashboardLayoutContent({
                 );
               })}
 
-              {/* Admin section */}
+              {/* ─── 設定（ユーザー用）+ サブメニュー ─── */}
+              {!isCollapsed && (
+                <div className="px-2 pt-4 pb-1">
+                  <div className="h-px bg-sidebar-border mb-3" />
+                </div>
+              )}
+
+              {/* 設定 親ボタン */}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={isSettingsActive}
+                  onClick={() => {
+                    if (isCollapsed) {
+                      setLocation("/settings/integrations");
+                    } else {
+                      setSettingsOpen((v) => !v);
+                      if (!settingsOpen) setLocation("/settings/integrations");
+                    }
+                  }}
+                  tooltip="設定"
+                  className="h-9 font-normal"
+                >
+                  <Settings className={`h-4 w-4 ${isSettingsActive ? "text-primary" : "text-muted-foreground"}`} />
+                  <span className="text-sm flex-1">設定</span>
+                  {!isCollapsed && (
+                    settingsOpen
+                      ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                      : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                  )}
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              {/* 設定 サブメニュー（連携のみ） */}
+              {!isCollapsed && settingsOpen && (
+                <div className="ml-3 pl-3 border-l border-sidebar-border/60 mt-0.5 mb-0.5 space-y-0.5">
+                  {userSettingsSubItems.map((sub) => {
+                    const isSubActive = location.startsWith(sub.path);
+                    return (
+                      <SidebarMenuItem key={sub.path}>
+                        <SidebarMenuButton
+                          isActive={isSubActive}
+                          onClick={() => setLocation(sub.path)}
+                          className="h-8 font-normal text-xs"
+                        >
+                          <sub.icon className={`h-3.5 w-3.5 ${isSubActive ? "text-primary" : "text-muted-foreground"}`} />
+                          <span className="text-xs">{sub.label}</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* ─── 管理者セクション ─── */}
               {isAdmin && (
                 <>
                   {!isCollapsed && (
@@ -221,24 +307,55 @@ function DashboardLayoutContent({
                       </p>
                     </div>
                   )}
-                  {adminMenuItems.map((item) => {
-                    const isActive = location.startsWith(item.path);
-                    return (
-                      <SidebarMenuItem key={item.path}>
-                        <SidebarMenuButton
-                          isActive={isActive}
-                          onClick={() => setLocation(item.path)}
-                          tooltip={item.label}
-                          className="h-9 font-normal"
-                        >
-                          <item.icon className={`h-4 w-4 ${isActive ? "text-primary" : "text-muted-foreground"}`} />
-                          <span className="text-sm">{item.label}</span>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    );
-                  })}
+
+                  {/* 管理者パネル 親ボタン */}
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      isActive={isAdminActive}
+                      onClick={() => {
+                        if (isCollapsed) {
+                          setLocation("/admin/account");
+                        } else {
+                          setAdminOpen((v) => !v);
+                          if (!adminOpen) setLocation("/admin/account");
+                        }
+                      }}
+                      tooltip="管理者パネル"
+                      className="h-9 font-normal"
+                    >
+                      <Shield className={`h-4 w-4 ${isAdminActive ? "text-primary" : "text-muted-foreground"}`} />
+                      <span className="text-sm flex-1">管理者パネル</span>
+                      {!isCollapsed && (
+                        adminOpen
+                          ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                          : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                      )}
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+
+                  {/* 管理者パネル サブメニュー */}
+                  {!isCollapsed && adminOpen && (
+                    <div className="ml-3 pl-3 border-l border-sidebar-border/60 mt-0.5 mb-0.5 space-y-0.5">
+                      {adminSubItems.map((sub) => {
+                        const isSubActive = location.startsWith(sub.path);
+                        return (
+                          <SidebarMenuItem key={sub.path}>
+                            <SidebarMenuButton
+                              isActive={isSubActive}
+                              onClick={() => setLocation(sub.path)}
+                              className="h-8 font-normal text-xs"
+                            >
+                              <sub.icon className={`h-3.5 w-3.5 ${isSubActive ? "text-primary" : "text-muted-foreground"}`} />
+                              <span className="text-xs">{sub.label}</span>
+                            </SidebarMenuButton>
+                          </SidebarMenuItem>
+                        );
+                      })}
+                    </div>
+                  )}
                 </>
               )}
+
             </SidebarMenu>
           </SidebarContent>
 
@@ -269,12 +386,12 @@ function DashboardLayoutContent({
                   <p className="text-xs text-muted-foreground">{user?.email}</p>
                 </div>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setLocation("/admin?tab=account")} className="cursor-pointer">
+                <DropdownMenuItem onClick={() => setLocation("/settings/integrations")} className="cursor-pointer">
                   <Settings className="mr-2 h-4 w-4" />
                   設定
                 </DropdownMenuItem>
                 {isAdmin && (
-                  <DropdownMenuItem onClick={() => setLocation("/admin")} className="cursor-pointer">
+                  <DropdownMenuItem onClick={() => setLocation("/admin/account")} className="cursor-pointer">
                     <Shield className="mr-2 h-4 w-4" />
                     管理者パネル
                   </DropdownMenuItem>
