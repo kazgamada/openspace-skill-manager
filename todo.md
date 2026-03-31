@@ -167,3 +167,9 @@
 - [x] ClaudeIntegration.tsx（GitHub取得タブ）に「自分のリポジトリをスキャン」セクションを追加
 - [x] スキャン結果をマイスキルに一括インポートできるUIを実装
 - [x] スキャン結果が0件の場合の適切なメッセージ表示
+
+## GitHubトークン認証エラー修正
+- [x] scanMyGithubRepos: 401エラー時にトークン再設定を促す分かりやすいエラーメッセージを表示
+- [x] GithubFetchTab: エラー発生時に設定ページへのリンクを表示
+- [x] testIntegration: GitHubトークンの実際のAPI疏通テスト（/user エンドポイント）を実装
+- [x] UserSettings.tsx: 連携設定保存後に自動テストを実行してトークン有効性を即座に確認（testIntegration改善で対応）

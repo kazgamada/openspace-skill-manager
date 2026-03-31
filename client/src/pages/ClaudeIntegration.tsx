@@ -150,16 +150,21 @@ function GithubFetchTab() {
   const [scanResults, setScanResults] = useState<null | { skills: { name: string; path: string; raw: string; repoUrl: string; repoName: string; tags: string[]; allowedTools: string[]; category: string; description: string }[]; reposScanned: number; reposWithSkills: number }>(null);
   const [scanSelectedIds, setScanSelectedIds] = useState<Set<string>>(new Set());
   const [scanImportResults, setScanImportResults] = useState<ImportResult[] | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
 
   const scanMutation = trpc.claude.scanMyGithubRepos.useMutation({
     onSuccess: (data) => {
       setScanResults(data);
+      setScanError(null);
       setScanSelectedIds(new Set(data.skills.map((s) => s.path)));
       setScanImportResults(null);
       if (data.skills.length === 0) toast.info(`${data.reposScanned}件のリポジトリをスキャンしましたが、スキルが見つかりませんでした`);
       else toast.success(`${data.skills.length}件のスキルを発見（${data.reposWithSkills}リポジトリ）`);
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => {
+      setScanError(err.message);
+      toast.error(err.message);
+    },
   });
 
   const scanImportMutation = trpc.claude.importFromGithub.useMutation({
@@ -233,14 +238,37 @@ function GithubFetchTab() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <Button
-            onClick={() => scanMutation.mutate({})}
-            disabled={scanMutation.isPending}
-            className="bg-purple-600 hover:bg-purple-700 text-white gap-2"
-          >
-            {scanMutation.isPending ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-            {scanMutation.isPending ? "スキャン中..." : "自分のリポジトリをスキャン"}
-          </Button>
+          <div className="flex items-center gap-3 flex-wrap">
+            <Button
+              onClick={() => { setScanError(null); scanMutation.mutate({}); }}
+              disabled={scanMutation.isPending}
+              className="bg-purple-600 hover:bg-purple-700 text-white gap-2"
+            >
+              {scanMutation.isPending ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+              {scanMutation.isPending ? "スキャン中..." : "自分のリポジトリをスキャン"}
+            </Button>
+            <a href="/settings?tab=integrations" className="text-xs text-purple-400 hover:text-purple-300 underline underline-offset-2">
+              トークンを設定→
+            </a>
+          </div>
+
+          {scanError && (
+            <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 space-y-2">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                <p className="text-red-300 text-sm">{scanError}</p>
+              </div>
+              {(scanError.includes("無効") || scanError.includes("期限切れ") || scanError.includes("401") || scanError.includes("Bad credentials")) && (
+                <a
+                  href="/settings?tab=integrations"
+                  className="inline-flex items-center gap-1.5 text-xs bg-purple-600/30 hover:bg-purple-600/50 text-purple-300 px-3 py-1.5 rounded-md transition-colors"
+                >
+                  <Settings2 className="w-3.5 h-3.5" />
+                  設定 → 連携でトークンを再登録
+                </a>
+              )}
+            </div>
+          )}
 
           {scanResults && (
             <div className="space-y-3">

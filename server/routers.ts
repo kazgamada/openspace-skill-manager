@@ -1539,10 +1539,12 @@ Output ONLY the merged SKILL.md content (starting with ---), no explanations.`;
       );
       if (!reposRes.ok) {
         const errText = await reposRes.text();
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `GitHub API エラー (repos): ${reposRes.status} ${reposRes.statusText} — ${errText.slice(0, 200)}`,
-        });
+        const is401 = reposRes.status === 401;
+        const is403 = reposRes.status === 403;
+        let errMsg = `GitHub API エラー (${reposRes.status}): ${errText.slice(0, 200)}`;
+        if (is401) errMsg = `GitHubトークンが無効または期限切れです。「設定 → 連携 → GitHub」でPersonal Access Tokenを再登録してください。`;
+        if (is403) errMsg = `GitHub APIのアクセス権限が不足しています。トークンに「repo」スコープが必要です。`;
+        throw new TRPCError({ code: "BAD_REQUEST", message: errMsg });
       }
       const repos = await reposRes.json() as { name: string; full_name: string; html_url: string; default_branch: string }[];
       console.log(`[claude.scanMyGithubRepos][${traceId}] Found ${repos.length} repos`);
@@ -1745,8 +1747,30 @@ const settingsRouter = router({
       let success = false;
       let message = "未設定";
       if (svc) {
-        // GitHub: check if token is set
-        if (input.service === "github" && svc.token) { success = true; message = "GitHub接続成功"; }
+        // GitHub: actually call /user endpoint to verify token
+        if (input.service === "github" && svc.token) {
+          try {
+            const ghRes = await fetch("https://api.github.com/user", {
+              headers: {
+                Authorization: `token ${svc.token}`,
+                Accept: "application/vnd.github.v3+json",
+                "User-Agent": "OSM/1.0",
+              },
+            });
+            if (ghRes.ok) {
+              const ghUser = await ghRes.json() as { login?: string };
+              success = true;
+              message = `GitHub接続成功（@${ghUser.login ?? "unknown"}）`;
+              // Persist username
+              integrations[input.service] = { ...(svc ?? {}), username: ghUser.login };
+            } else {
+              const errBody = await ghRes.json() as { message?: string };
+              message = `GitHub認証失敗 (${ghRes.status}): ${errBody.message ?? "Bad credentials"}。設定→連携でトークンを再登録してください。`;
+            }
+          } catch (e) {
+            message = `GitHub接続エラー: ${e instanceof Error ? e.message : String(e)}`;
+          }
+        }
         // Claude: check if mcpPath or apiKey is set
         else if (input.service === "claude" && (svc.mcpPath || svc.apiKey)) { success = true; message = "Claude接続成功"; }
         // Google Drive: check if folderId is set
