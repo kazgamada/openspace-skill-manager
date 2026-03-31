@@ -390,8 +390,15 @@ function ConfigureDialog({
   onSaved: () => void;
 }) {
   const svc = SERVICES.find((s) => s.key === serviceKey)!;
+  // For password fields: start empty (show placeholder indicating already set)
+  // For text fields: pre-fill with existing value
   const [values, setValues] = useState<Record<string, string>>(
-    Object.fromEntries(svc.fields.map((f) => [f.key, existing?.[f.key] ?? ""]))
+    Object.fromEntries(
+      svc.fields.map((f) => [
+        f.key,
+        f.type === "password" ? "" : (existing?.[f.key] ?? ""),
+      ])
+    )
   );
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<"success" | "error" | null>(null);
@@ -429,18 +436,33 @@ function ConfigureDialog({
         </DialogHeader>
 
         <div className="space-y-3 py-2">
-          {svc.fields.map((field) => (
-            <div key={field.key} className="space-y-1.5">
-              <Label className="text-xs">{field.label}</Label>
-              <Input
-                type={field.type ?? "text"}
-                placeholder={field.placeholder}
-                value={values[field.key] ?? ""}
-                onChange={(e) => setValues((v) => ({ ...v, [field.key]: e.target.value }))}
-                className="h-8 text-sm font-mono"
-              />
-            </div>
-          ))}
+          {svc.fields.map((field) => {
+            const isPassword = field.type === "password";
+            const hasExisting = isPassword && !!(existing?.[field.key]);
+            return (
+              <div key={field.key} className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs">{field.label}</Label>
+                  {hasExisting && (
+                    <span className="text-[10px] text-emerald-400 flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" />設定済
+                    </span>
+                  )}
+                </div>
+                <Input
+                  type={field.type ?? "text"}
+                  placeholder={
+                    isPassword && hasExisting
+                      ? "変更する場合のみ入力（空欄のまま保存すると現在の値を維持）"
+                      : field.placeholder
+                  }
+                  value={values[field.key] ?? ""}
+                  onChange={(e) => setValues((v) => ({ ...v, [field.key]: e.target.value }))}
+                  className="h-8 text-sm font-mono"
+                />
+              </div>
+            );
+          })}
 
           {svc.helpUrl && (
             <p className="text-xs text-muted-foreground">
@@ -477,7 +499,16 @@ function ConfigureDialog({
           </Button>
           <Button
             size="sm"
-            onClick={() => saveIntegration.mutate({ service: serviceKey, config: values })}
+            onClick={() => {
+              // For password fields: if left empty, keep the existing value (don't overwrite)
+              const mergedConfig: Record<string, string> = { ...values };
+              svc.fields.forEach((f) => {
+                if (f.type === "password" && !values[f.key] && existing?.[f.key]) {
+                  mergedConfig[f.key] = existing[f.key];
+                }
+              });
+              saveIntegration.mutate({ service: serviceKey, config: mergedConfig });
+            }}
             disabled={saveIntegration.isPending || testing}
             className="gap-1.5"
           >
