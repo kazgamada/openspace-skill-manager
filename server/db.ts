@@ -223,8 +223,12 @@ export async function getCommunitySkills(opts?: {
       upstreamSha: communitySkills.upstreamSha,
       lastSyncedAt: communitySkills.lastSyncedAt,
       cachedAt: communitySkills.cachedAt,
-      repoOwner: skillSources.repoOwner,
-      repoName: skillSources.repoName,
+      forkCount: communitySkills.forkCount,
+      repoOwner: communitySkills.repoOwner,
+      repoName: communitySkills.repoName,
+      crawlRank: communitySkills.crawlRank,
+      crawlSource: communitySkills.crawlSource,
+      githubUrl: communitySkills.githubUrl,
     })
     .from(communitySkills)
     .leftJoin(skillSources, eq(communitySkills.sourceId, skillSources.id))

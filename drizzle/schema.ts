@@ -141,6 +141,13 @@ export const communitySkills = mysqlTable("community_skills", {
   generationCount: int("generationCount").default(1),
   codePreview: text("codePreview"),
   isInstalled: boolean("isInstalled").default(false),
+  // GitHub crawl fields
+  forkCount: int("forkCount").default(0),
+  repoOwner: varchar("repoOwner", { length: 128 }),
+  repoName: varchar("repoName", { length: 128 }),
+  crawlRank: float("crawlRank").default(0),
+  crawlSource: varchar("crawlSource", { length: 32 }).default("manual"),
+  githubUrl: varchar("githubUrl", { length: 512 }),
   // Dynamic sync fields
   sourceId: int("sourceId").references(() => skillSources.id, { onDelete: "set null" }),
   upstreamSha: varchar("upstreamSha", { length: 64 }), // GitHub blob SHA for change detection
@@ -184,6 +191,10 @@ export const userSettings = mysqlTable("user_settings", {
   integrations: text("integrations"),
   // GitHub auto sync settings
   autoSyncGithub: boolean("autoSyncGithub").default(false).notNull(),
+  // Sync frequency in hours: 1=毎時, 6=6時間毎, 24=毎日(default), 168=毎週
+  githubSyncFrequencyHours: int("githubSyncFrequencyHours").default(24).notNull(),
+  // Last time GitHub auto sync ran for this user
+  githubLastSyncAt: timestamp("githubLastSyncAt"),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 

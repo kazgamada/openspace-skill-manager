@@ -242,6 +242,7 @@ function IntegrationsPanel() {
       {githubConnected && (
         <GithubAutoSyncPanel
           autoSyncEnabled={prefsQuery.data?.autoSyncGithub ?? false}
+          frequencyHours={prefsQuery.data?.githubSyncFrequencyHours ?? 24}
           onPrefsRefetch={() => prefsQuery.refetch()}
         />
       )}
@@ -262,9 +263,11 @@ function IntegrationsPanel() {
 // ─── GitHub Auto Sync Panel ───────────────────────────────────────────────────
 function GithubAutoSyncPanel({
   autoSyncEnabled,
+  frequencyHours,
   onPrefsRefetch,
 }: {
   autoSyncEnabled: boolean;
+  frequencyHours?: number;
   onPrefsRefetch: () => void;
 }) {
   const utils = trpc.useUtils();
@@ -295,21 +298,41 @@ function GithubAutoSyncPanel({
           </div>
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">
-              {autoSyncEnabled ? "有効（1日1回）" : "無効"}
+              {autoSyncEnabled ? "有効" : "無効"}
             </span>
             <Switch
               checked={autoSyncEnabled}
-              onCheckedChange={(v) => setAutoSync.mutate({ enabled: v })}
+              onCheckedChange={(v) => setAutoSync.mutate({ enabled: v, frequencyHours: frequencyHours ?? 24 })}
               disabled={setAutoSync.isPending}
             />
           </div>
         </div>
         <CardDescription className="text-xs mt-1">
-          全リポジトリの <code className="text-[10px] bg-muted px-1 py-0.5 rounded">.claude/skills/*.md</code> を1日1回スキャンし、変更・追加のあるスキルのみマイスキルに自動インポートします
+          全リポジトリの <code className="text-[10px] bg-muted px-1 py-0.5 rounded">.claude/skills/*.md</code> を設定した頻度でスキャンし、変更・追加のあるスキルのみマイスキルに自動インポートします
         </CardDescription>
       </CardHeader>
 
       <CardContent className="px-4 pb-4 space-y-3">
+        {/* Frequency selector */}
+        {autoSyncEnabled && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground shrink-0">同期頻度</span>
+            <select
+              className="flex-1 h-7 text-xs rounded-md border border-input bg-background px-2 py-0 text-foreground"
+              value={frequencyHours ?? 24}
+              onChange={(e) => setAutoSync.mutate({ enabled: true, frequencyHours: Number(e.target.value) })}
+              disabled={setAutoSync.isPending}
+            >
+              <option value={1}>1時間ごと</option>
+              <option value={6}>6時間ごと</option>
+              <option value={12}>12時間ごと</option>
+              <option value={24}>1日1回</option>
+              <option value={72}>3日に1回</option>
+              <option value={168}>1週間に1回</option>
+            </select>
+          </div>
+        )}
+
         {/* Manual trigger */}
         <Button
           variant="outline"

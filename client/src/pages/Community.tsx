@@ -674,6 +674,14 @@ export default function Community() {
   });
 
   const skills = communityQuery.data ?? [];
+  const crawlStats = trpc.community.getCrawlStats.useQuery();
+  const triggerCrawl = trpc.community.triggerCrawl.useMutation({
+    onSuccess: (data) => {
+      toast.success(data.message);
+      setTimeout(() => crawlStats.refetch(), 5000);
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   return (
     <DashboardLayout>
@@ -715,8 +723,34 @@ export default function Community() {
               スキル広場
             </h1>
             <p className="text-sm text-muted-foreground mt-0.5">
-              コミュニティのスキルを検索・インストール
+              GitHub全体を回遊して公開スキルを自動収集（1日100件）・パフォーマンス順に表示
             </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {crawlStats.data && (
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Database className="w-3.5 h-3.5" />
+                <span>{crawlStats.data.total.toLocaleString()}件収集済み</span>
+                {crawlStats.data.lastCrawledAt && (
+                  <span className="text-muted-foreground/60">・最終{formatDistanceToNow(new Date(crawlStats.data.lastCrawledAt), { addSuffix: true, locale: ja })}</span>
+                )}
+              </div>
+            )}
+            {githubConnected && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 text-xs"
+                onClick={() => triggerCrawl.mutate()}
+                disabled={triggerCrawl.isPending}
+              >
+                {triggerCrawl.isPending
+                  ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  : <RefreshCw className="w-3.5 h-3.5" />
+                }
+                今すぐクロール
+              </Button>
+            )}
           </div>
         </div>
 

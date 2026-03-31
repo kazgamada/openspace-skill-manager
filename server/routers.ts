@@ -45,8 +45,10 @@ import {
   createGithubSyncLog,
   updateGithubSyncLog,
   getGithubSyncLogs,
+  getDb,
 } from "./db";
 import { syncSkillSource } from "./github-sync";
+import { runGithubCrawl } from "./github-crawl";
 import { invokeLLM } from "./_core/llm";
 import { broadcastEvolutionEvent } from "./_core/index";
 import { systemRouter } from "./_core/systemRouter";
@@ -542,6 +544,48 @@ const communityRouter = router({
   removeDuplicates: protectedProcedure.mutation(async () => {
     const removed = await removeDuplicateCommunitySkills();
     return { success: true, removed };
+  }),
+
+  /** GitHub全体クロールを手動トリガー */
+  triggerCrawl: adminProcedure.mutation(async ({ ctx }) => {
+    // 管理者のGitHubトークンを取得
+    const s = await getUserSettingsByUserId(ctx.user.id);
+    let token: string | undefined;
+    if (s?.integrations) {
+      try {
+        const intg = JSON.parse(s.integrations) as Record<string, Record<string, unknown>>;
+        token = intg.github?.token as string | undefined;
+      } catch {}
+    }
+    // 非同期で実行（ブラウザをブロックしない）
+    runGithubCrawl(token).catch((e: unknown) =>
+      console.error("[GithubCrawl] Manual trigger error:", e)
+    );
+    return { success: true, message: "GitHubクロールを開始しました。数分後にスキル広場に反映されます。" };
+  }),
+
+  /** クロール統計情報を取得 */
+  getCrawlStats: publicProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return { total: 0, lastCrawledAt: null, bySource: {} };
+    const { communitySkills } = await import("../drizzle/schema");
+    const { sql, max } = await import("drizzle-orm");
+    const rows = await db
+      .select({
+        crawlSource: communitySkills.crawlSource,
+        count: sql<number>`count(*)`,
+        lastCrawled: max(communitySkills.lastSyncedAt),
+      })
+      .from(communitySkills)
+      .groupBy(communitySkills.crawlSource);
+    const total = rows.reduce((s, r) => s + Number(r.count), 0);
+    const lastCrawledAt = rows
+      .filter((r) => r.crawlSource === "github_crawl")
+      .map((r) => r.lastCrawled)
+      .filter(Boolean)[0] ?? null;
+    const bySource: Record<string, number> = {};
+    for (const r of rows) bySource[r.crawlSource ?? "unknown"] = Number(r.count);
+    return { total, lastCrawledAt, bySource };
   }),
 });
 
@@ -1839,13 +1883,21 @@ const settingsRouter = router({
       notifyOnCommunity: s?.notifyOnCommunity ?? false,
       emailDigest: s?.emailDigest ?? false,
       autoSyncGithub: s?.autoSyncGithub ?? false,
+      githubSyncFrequencyHours: s?.githubSyncFrequencyHours ?? 24,
+      githubLastSyncAt: s?.githubLastSyncAt ?? null,
     };
   }),
 
   setAutoSyncGithub: protectedProcedure
-    .input(z.object({ enabled: z.boolean() }))
+    .input(z.object({
+      enabled: z.boolean(),
+      frequencyHours: z.number().int().min(1).max(168).optional(),
+    }))
     .mutation(async ({ input, ctx }) => {
-      await upsertUserSettings(ctx.user.id, { autoSyncGithub: input.enabled });
+      await upsertUserSettings(ctx.user.id, {
+        autoSyncGithub: input.enabled,
+        ...(input.frequencyHours !== undefined ? { githubSyncFrequencyHours: input.frequencyHours } : {}),
+      });
       return { success: true, enabled: input.enabled };
     }),
 

@@ -136,30 +136,35 @@ setInterval(async () => {
   }
 }, 6 * 60 * 60 * 1000); // 6 hours
 
-// ─── 1日1回 GitHub 個人自動同期スケジューラー ─────────────────────────────────────────────
+// ─── GitHub 個人自動同期スケジューラー（設定頻度対応） ────────────────────────────────
 setInterval(async () => {
   try {
     const { getDb } = await import("../db");
-    const { upsertUserSettings, getUserSettingsByUserId } = await import("../db");
     const db = await getDb();
     if (!db) return;
 
-    // Find all users with autoSyncGithub = true
-    const { users, userSettings } = await import("../../drizzle/schema");
+    // autoSyncGithub=true のユーザーを取得（頻度設定も含む）
+    const { userSettings } = await import("../../drizzle/schema");
     const { eq } = await import("drizzle-orm");
     const rows = await db.select({
       userId: userSettings.userId,
       integrations: userSettings.integrations,
+      githubSyncFrequencyHours: userSettings.githubSyncFrequencyHours,
+      githubLastSyncAt: userSettings.githubLastSyncAt,
     }).from(userSettings).where(eq(userSettings.autoSyncGithub, true));
 
     if (rows.length === 0) return;
-    console.log(`[DailyGithubSync] Running for ${rows.length} user(s)`);
 
+    const now = Date.now();
     const { createGithubSyncLog } = await import("../db");
-    // Dynamically import runGithubAutoSync via appRouter trigger pattern
-    // We call triggerGithubSync procedure for each user
+
     for (const row of rows) {
       try {
+        // 頻度チェック: 前回同期から設定時間以上経過した場合のみ実行
+        const freqMs = (row.githubSyncFrequencyHours ?? 24) * 60 * 60 * 1000;
+        const lastSync = row.githubLastSyncAt ? new Date(row.githubLastSyncAt).getTime() : 0;
+        if (now - lastSync < freqMs) continue;
+
         let token: string | undefined;
         if (row.integrations) {
           const integrations = JSON.parse(row.integrations) as Record<string, Record<string, unknown>>;
@@ -167,17 +172,84 @@ setInterval(async () => {
         }
         if (!token) continue;
 
+        console.log(`[GithubAutoSync] Running for user ${row.userId} (freq=${row.githubSyncFrequencyHours}h)`);
         const logId = await createGithubSyncLog(row.userId);
-        // Import and run the sync function
         const { runGithubAutoSyncExported } = await import("../github-autosync");
         runGithubAutoSyncExported(row.userId, token, logId).catch((e: unknown) =>
-          console.error(`[DailyGithubSync] Error for user ${row.userId}:`, e)
+          console.error(`[GithubAutoSync] Error for user ${row.userId}:`, e)
         );
+        // 最終同期日時を更新
+        await db.update(userSettings)
+          .set({ githubLastSyncAt: new Date() })
+          .where(eq(userSettings.userId, row.userId));
       } catch (e) {
-        console.error(`[DailyGithubSync] Setup error for user ${row.userId}:`, e);
+        console.error(`[GithubAutoSync] Setup error for user ${row.userId}:`, e);
       }
     }
   } catch (e) {
-    console.error("[DailyGithubSync] Scheduler error:", e);
+    console.error("[GithubAutoSync] Scheduler error:", e);
+  }
+}, 60 * 60 * 1000); // Check every hour
+
+// ─── 1日1回 GitHub 広場クロールスケジューラー ─────────────────────────────────────────────
+// 起動から5分後に初回実行
+setTimeout(async () => {
+  try {
+    console.log("[GithubCrawl] Running initial crawl...");
+    const { runGithubCrawl } = await import("../github-crawl");
+    const { getDb } = await import("../db");
+    const db = await getDb();
+    let adminToken: string | undefined;
+    if (db) {
+      const { userSettings, users } = await import("../../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const adminRows = await db
+        .select({ integrations: userSettings.integrations })
+        .from(userSettings)
+        .innerJoin(users, eq(userSettings.userId, users.id))
+        .where(eq(users.role, "admin"))
+        .limit(1);
+      if (adminRows[0]?.integrations) {
+        try {
+          const intg = JSON.parse(adminRows[0].integrations) as Record<string, Record<string, unknown>>;
+          adminToken = intg.github?.token as string | undefined;
+        } catch {}
+      }
+    }
+    const result = await runGithubCrawl(adminToken);
+    console.log(`[GithubCrawl] Initial crawl done: found=${result.found}, saved=${result.saved}, updated=${result.updated}`);
+  } catch (e) {
+    console.error("[GithubCrawl] Initial crawl error:", e);
+  }
+}, 5 * 60 * 1000); // 5 minutes after startup
+
+// 24時間ごとに定期実行
+setInterval(async () => {
+  try {
+    console.log("[GithubCrawl] Running daily crawl...");
+    const { runGithubCrawl } = await import("../github-crawl");
+    const { getDb } = await import("../db");
+    const db = await getDb();
+    let adminToken: string | undefined;
+    if (db) {
+      const { userSettings, users } = await import("../../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const adminRows = await db
+        .select({ integrations: userSettings.integrations })
+        .from(userSettings)
+        .innerJoin(users, eq(userSettings.userId, users.id))
+        .where(eq(users.role, "admin"))
+        .limit(1);
+      if (adminRows[0]?.integrations) {
+        try {
+          const intg = JSON.parse(adminRows[0].integrations) as Record<string, Record<string, unknown>>;
+          adminToken = intg.github?.token as string | undefined;
+        } catch {}
+      }
+    }
+    const result = await runGithubCrawl(adminToken);
+    console.log(`[GithubCrawl] Daily crawl done: found=${result.found}, saved=${result.saved}, updated=${result.updated}`);
+  } catch (e) {
+    console.error("[GithubCrawl] Daily crawl error:", e);
   }
 }, 24 * 60 * 60 * 1000); // 24 hours
