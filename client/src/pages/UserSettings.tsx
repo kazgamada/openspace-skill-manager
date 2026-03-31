@@ -397,10 +397,7 @@ function ConfigureDialog({
   const [testResult, setTestResult] = useState<"success" | "error" | null>(null);
   const [testMessage, setTestMessage] = useState<string>("");
 
-  const saveIntegration = trpc.settings.saveIntegration.useMutation({
-    onSuccess: () => { toast.success(`${svc.label} の連携を保存しました`); onSaved(); },
-    onError: (e) => toast.error(e.message),
-  });
+  const utils = trpc.useUtils();
   const testIntegration = trpc.settings.testIntegration.useMutation({
     onMutate: () => { setTesting(true); setTestResult(null); setTestMessage(""); },
     onSuccess: (data) => {
@@ -411,6 +408,14 @@ function ConfigureDialog({
       else toast.error("接続テスト失敗");
     },
     onError: (e) => { setTesting(false); setTestResult("error"); setTestMessage(e.message); toast.error(e.message); },
+  });
+  const saveIntegration = trpc.settings.saveIntegration.useMutation({
+    onSuccess: async () => {
+      toast.success(`${svc.label} の連携を保存しました`);
+      await utils.settings.getIntegrations.invalidate();
+      onSaved();
+    },
+    onError: (e) => toast.error(e.message),
   });
 
   return (
@@ -463,7 +468,7 @@ function ConfigureDialog({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => testIntegration.mutate({ service: serviceKey })}
+            onClick={() => testIntegration.mutate({ service: serviceKey, config: values })}
             disabled={testing || saveIntegration.isPending}
             className="gap-1.5"
           >

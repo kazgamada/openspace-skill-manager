@@ -1738,6 +1738,8 @@ const settingsRouter = router({
   testIntegration: protectedProcedure
     .input(z.object({
       service: z.enum(["claude", "github", "googleDrive", "localFolder"]),
+      // Optional: pass current form values to test before saving
+      config: z.record(z.string(), z.unknown()).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       // Simulate connection test (real implementation would call each service API)
@@ -1746,7 +1748,11 @@ const settingsRouter = router({
       if (s?.integrations) {
         try { integrations = JSON.parse(s.integrations); } catch {}
       }
-      const svc = integrations[input.service] as Record<string, unknown> | undefined;
+      // If caller passed config (e.g. unsaved form values), merge them in for testing
+      const svc = {
+        ...(integrations[input.service] as Record<string, unknown> | undefined ?? {}),
+        ...(input.config ?? {}),
+      } as Record<string, unknown>;
       let success = false;
       let message = "未設定";
       if (svc) {

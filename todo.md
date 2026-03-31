@@ -185,3 +185,9 @@
 - [x] settings.getGithubSyncLogs tRPCエンドポイント（同期履歴取得）を追加
 - [x] settings.triggerGithubSync tRPCエンドポイント（手動実行）を追加
 - [x] UserSettings.tsx: 自動同期ON/OFFトグルと同期履歴を表示するUIを追加
+
+## GitHubトークン入力・保存UI修正
+- [x] UserSettings.tsx: GitHubトークン入力フォームで「保存」ボタンを押したらDBに正しく保存されるよう修正
+- [x] testIntegration: 入力中のconfig（未保存の値）を受け取り、DBの値より優先してテストするよう拡張
+- [x] テストボタンに入力中のvaluesを渡すよう修正（未保存のトークンでもテスト可能）
+- [x] 保存後にgetIntegrationsをinvalidateして連携一覧を即座に更新
