@@ -160,3 +160,10 @@
 ## スキル一覧表示改善（list-smビュー）
 - [x] MySkills.tsx: list-smビューにタイトル・更新日時・引用元リポジトリを表示
 - [x] Community.tsx: list-smビューにタイトル・更新日時・引用元リポジトリを表示
+
+## GitHubトークン保存 & 自分のリポジトリスキャン機能
+- [x] 設定画面（UserSettings.tsx）にGitHubトークン入力・保存UIを追加（既存の連携設定画面で対応済み）
+- [x] server/routers.ts: claude.scanMyGithubRepos エンドポイント実装（GitHubトークンで全リポジトリをスキャンし .claude/skills/*.md を取得）
+- [x] ClaudeIntegration.tsx（GitHub取得タブ）に「自分のリポジトリをスキャン」セクションを追加
+- [x] スキャン結果をマイスキルに一括インポートできるUIを実装
+- [x] スキャン結果が0件の場合の適切なメッセージ表示

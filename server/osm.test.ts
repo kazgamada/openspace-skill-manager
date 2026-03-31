@@ -575,3 +575,21 @@ describe("community.updateSource – auth guard", () => {
     ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
   });
 });
+
+describe("claude.scanMyGithubRepos – auth guard", () => {
+  it("throws UNAUTHORIZED when called without a session", async () => {
+    const { ctx } = createGuestContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.claude.scanMyGithubRepos({})).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    });
+  });
+
+  it("throws BAD_REQUEST when no GitHub token is configured", async () => {
+    const { ctx } = createUserContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.claude.scanMyGithubRepos({})).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+  });
+});

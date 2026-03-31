@@ -146,6 +146,38 @@ function GithubFetchTab() {
   const [fetchedSkills, setFetchedSkills] = useState<FetchedSkill[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [importResults, setImportResults] = useState<ImportResult[] | null>(null);
+  // My repos scan state
+  const [scanResults, setScanResults] = useState<null | { skills: { name: string; path: string; raw: string; repoUrl: string; repoName: string; tags: string[]; allowedTools: string[]; category: string; description: string }[]; reposScanned: number; reposWithSkills: number }>(null);
+  const [scanSelectedIds, setScanSelectedIds] = useState<Set<string>>(new Set());
+  const [scanImportResults, setScanImportResults] = useState<ImportResult[] | null>(null);
+
+  const scanMutation = trpc.claude.scanMyGithubRepos.useMutation({
+    onSuccess: (data) => {
+      setScanResults(data);
+      setScanSelectedIds(new Set(data.skills.map((s) => s.path)));
+      setScanImportResults(null);
+      if (data.skills.length === 0) toast.info(`${data.reposScanned}件のリポジトリをスキャンしましたが、スキルが見つかりませんでした`);
+      else toast.success(`${data.skills.length}件のスキルを発見（${data.reposWithSkills}リポジトリ）`);
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const scanImportMutation = trpc.claude.importFromGithub.useMutation({
+    onSuccess: (data) => {
+      setScanImportResults(data.results);
+      toast.success(`${data.succeeded}件インポート完了（新規: ${data.created}件、更新: ${data.updated}件）`);
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const handleScanImport = () => {
+    if (!scanResults) return;
+    const toImport = scanResults.skills
+      .filter((s) => scanSelectedIds.has(s.path))
+      .map((s) => ({ name: s.name, raw: s.raw, path: s.path, repoUrl: s.repoUrl }));
+    if (toImport.length === 0) { toast.warning("スキルを選択してください"); return; }
+    scanImportMutation.mutate({ skills: toImport });
+  };
 
   const fetchMutation = trpc.claude.fetchGithubSkills.useMutation({
     onSuccess: (data) => {
@@ -188,6 +220,115 @@ function GithubFetchTab() {
 
   return (
     <div className="space-y-6">
+      {/* ─── My Repos Scan ─── */}
+      <Card className="bg-gradient-to-br from-purple-900/30 to-indigo-900/20 border-purple-500/30">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-white text-base flex items-center gap-2">
+            <Search className="w-4 h-4 text-purple-400" />
+            自分のリポジトリをスキャン
+          </CardTitle>
+          <CardDescription className="text-white/50 text-sm">
+            GitHubトークンを使って自分のリポジトリを自動スキャンし、<code className="text-purple-300">.claude/skills/</code> 内のスキルを一括インポートします。
+            トークンは <span className="text-purple-300">設定 → 連携</span> で登録できます。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Button
+            onClick={() => scanMutation.mutate({})}
+            disabled={scanMutation.isPending}
+            className="bg-purple-600 hover:bg-purple-700 text-white gap-2"
+          >
+            {scanMutation.isPending ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+            {scanMutation.isPending ? "スキャン中..." : "自分のリポジトリをスキャン"}
+          </Button>
+
+          {scanResults && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 text-sm">
+                <span className="text-white/60">{scanResults.reposScanned}件スキャン</span>
+                <span className="text-white/40">→</span>
+                <span className="text-purple-300 font-medium">{scanResults.skills.length}件のスキルを発見</span>
+                {scanResults.reposWithSkills > 0 && (
+                  <span className="text-white/40">（{scanResults.reposWithSkills}リポジトリ）</span>
+                )}
+              </div>
+
+              {scanResults.skills.length === 0 ? (
+                <div className="text-center py-8 text-white/40">
+                  <Search className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                  <p className="text-sm">.claude/skills/ にスキルファイルが見つかりませんでした</p>
+                  <p className="text-xs mt-1">リポジトリに <code>.claude/skills/*.md</code> ファイルを追加してください</p>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <span className="text-white/60 text-sm">{scanSelectedIds.size}件選択中</span>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm"
+                        onClick={() => setScanSelectedIds(new Set(scanResults.skills.map((s) => s.path)))}
+                        className="border-white/20 text-white/70 hover:bg-white/10 text-xs">全選択</Button>
+                      <Button variant="outline" size="sm"
+                        onClick={() => setScanSelectedIds(new Set())}
+                        className="border-white/20 text-white/70 hover:bg-white/10 text-xs">全解除</Button>
+                      <Button
+                        onClick={handleScanImport}
+                        disabled={scanImportMutation.isPending || scanSelectedIds.size === 0}
+                        className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white gap-2 text-sm">
+                        {scanImportMutation.isPending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                        {scanSelectedIds.size}件をインポート
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="grid gap-2 max-h-80 overflow-y-auto">
+                    {scanResults.skills.map((skill) => (
+                      <div
+                        key={skill.path}
+                        onClick={() => setScanSelectedIds((prev) => { const next = new Set(prev); if (next.has(skill.path)) next.delete(skill.path); else next.add(skill.path); return next; })}
+                        className={`cursor-pointer rounded-lg border p-3 transition-colors ${
+                          scanSelectedIds.has(skill.path)
+                            ? "border-purple-500/50 bg-purple-500/10"
+                            : "border-white/10 bg-white/3 hover:border-white/20"
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className={`mt-0.5 w-4 h-4 rounded border-2 flex-shrink-0 flex items-center justify-center transition-colors ${
+                            scanSelectedIds.has(skill.path) ? "border-purple-400 bg-purple-400" : "border-white/30"
+                          }`}>
+                            {scanSelectedIds.has(skill.path) && <CheckCircle2 className="w-3 h-3 text-white" />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-medium text-white text-sm">{skill.name}</span>
+                              <Badge variant="outline" className="text-xs border-white/20 text-white/50">{skill.repoName}</Badge>
+                            </div>
+                            {skill.description && <p className="text-white/50 text-xs mt-0.5 line-clamp-1">{skill.description}</p>}
+                            <p className="text-white/30 text-xs font-mono mt-0.5 truncate">{skill.path}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {scanImportResults && (
+            <div className="space-y-1 mt-2">
+              <p className="text-white/60 text-xs font-medium">インポート結果</p>
+              {scanImportResults.map((r, i) => (
+                <div key={i} className="flex items-center gap-2 text-xs">
+                  {r.success ? <CheckCircle2 className="w-3.5 h-3.5 text-green-400" /> : <XCircle className="w-3.5 h-3.5 text-red-400" />}
+                  <span className="text-white/70">{r.name}</span>
+                  {r.success && <Badge variant="outline" className={`text-xs ${r.action === "created" ? "border-green-500/40 text-green-400" : "border-blue-500/40 text-blue-400"}`}>{r.action === "created" ? "新規" : "更新"}</Badge>}
+                  {!r.success && <span className="text-red-400">{r.error}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       <Card className="bg-white/5 border-white/10">
         <CardHeader className="pb-3">
           <CardTitle className="text-white text-base flex items-center gap-2">

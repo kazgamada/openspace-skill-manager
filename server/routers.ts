@@ -1498,6 +1498,147 @@ Output ONLY the merged SKILL.md content (starting with ---), no explanations.`;
       };
     }),
 
+  /** Scan all repos of the authenticated user for .claude/skills/*.md files */
+  scanMyGithubRepos: protectedProcedure
+    .input(z.object({
+      maxRepos: z.number().min(1).max(100).default(50),
+      maxFilesPerRepo: z.number().min(1).max(200).default(100),
+    }).optional())
+    .mutation(async ({ input, ctx }) => {
+      const traceId = Math.random().toString(36).slice(2, 8).toUpperCase();
+      const maxRepos = input?.maxRepos ?? 50;
+      const maxFilesPerRepo = input?.maxFilesPerRepo ?? 100;
+
+      // Get GitHub token from user settings
+      const s = await getUserSettingsByUserId(ctx.user.id);
+      let token: string | undefined;
+      if (s?.integrations) {
+        try {
+          const integrations = JSON.parse(s.integrations) as Record<string, Record<string, unknown>>;
+          token = integrations.github?.token as string | undefined;
+        } catch {}
+      }
+      if (!token) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "GitHubトークンが設定されていません。設定→連携でGitHub Personal Access Tokenを登録してください。",
+        });
+      }
+
+      const headers = {
+        Authorization: `token ${token}`,
+        Accept: "application/vnd.github.v3+json",
+        "User-Agent": "OSM/1.0",
+      };
+
+      // 1. Fetch user's repos
+      console.log(`[claude.scanMyGithubRepos][${traceId}] Fetching repos...`);
+      const reposRes = await fetch(
+        `https://api.github.com/user/repos?per_page=${maxRepos}&sort=pushed&type=owner`,
+        { headers }
+      );
+      if (!reposRes.ok) {
+        const errText = await reposRes.text();
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `GitHub API エラー (repos): ${reposRes.status} ${reposRes.statusText} — ${errText.slice(0, 200)}`,
+        });
+      }
+      const repos = await reposRes.json() as { name: string; full_name: string; html_url: string; default_branch: string }[];
+      console.log(`[claude.scanMyGithubRepos][${traceId}] Found ${repos.length} repos`);
+
+      // 2. For each repo, check for .claude/skills/*.md using Git Tree API
+      const allSkills: {
+        name: string;
+        path: string;
+        raw: string;
+        repoUrl: string;
+        repoName: string;
+        tags: string[];
+        allowedTools: string[];
+        category: string;
+        description: string;
+      }[] = [];
+
+      const CONCURRENCY = 5;
+      for (let i = 0; i < repos.length; i += CONCURRENCY) {
+        const batch = repos.slice(i, i + CONCURRENCY);
+        await Promise.all(batch.map(async (repo) => {
+          try {
+            const treeRes = await fetch(
+              `https://api.github.com/repos/${repo.full_name}/git/trees/${repo.default_branch}?recursive=1`,
+              { headers }
+            );
+            if (!treeRes.ok) return;
+            const treeData = await treeRes.json() as { tree: { path: string; type: string }[] };
+            const mdFiles = (treeData.tree ?? []).filter((f) =>
+              f.type === "blob" &&
+              /^(\.claude\/skills\/.*\.md|skills\/.*\.md)$/i.test(f.path)
+            ).slice(0, maxFilesPerRepo);
+
+            if (mdFiles.length === 0) return;
+            console.log(`[claude.scanMyGithubRepos][${traceId}] ${repo.full_name}: ${mdFiles.length} skill files`);
+
+            await Promise.all(mdFiles.map(async (file) => {
+              try {
+                const rawRes = await fetch(
+                  `https://raw.githubusercontent.com/${repo.full_name}/${repo.default_branch}/${file.path}`,
+                  { headers }
+                );
+                if (!rawRes.ok) return;
+                const raw = await rawRes.text();
+                if (raw.length < 10) return;
+
+                // Parse frontmatter
+                const fmMatch = raw.match(/^---\n([\s\S]*?)\n---/);
+                let name = file.path.split("/").pop()?.replace(/\.md$/i, "") ?? file.path;
+                let description = "";
+                let allowedTools: string[] = [];
+                let tags: string[] = [];
+                let category = "imported";
+
+                if (fmMatch) {
+                  const fm = fmMatch[1];
+                  const nameMatch = fm.match(/^name:\s*(.+)$/m);
+                  if (nameMatch) name = nameMatch[1].trim();
+                  const descMatch = fm.match(/^description:\s*(.+)$/m);
+                  if (descMatch) description = descMatch[1].trim();
+                  const toolsMatch = fm.match(/^allowed-tools:\s*(.+)$/m);
+                  if (toolsMatch) allowedTools = toolsMatch[1].split(",").map((t) => t.trim()).filter(Boolean);
+                }
+
+                // Auto-tag from allowed-tools
+                const TOOL_TAG_MAP: Record<string, string[]> = {
+                  Bash: ["shell", "cli"], Read: ["file", "read"], Write: ["file", "write"],
+                  Edit: ["file", "edit"], WebSearch: ["web", "search"], WebFetch: ["web", "fetch"],
+                  Task: ["agent", "orchestration"], TodoRead: ["todo", "task"], TodoWrite: ["todo", "task"],
+                  Grep: ["search", "code"], Glob: ["file", "search"],
+                };
+                const autoTags = new Set<string>();
+                for (const tool of allowedTools) {
+                  for (const tag of (TOOL_TAG_MAP[tool] ?? [])) autoTags.add(tag);
+                }
+                tags = Array.from(autoTags);
+
+                allSkills.push({ name, path: file.path, raw, repoUrl: repo.html_url, repoName: repo.full_name, tags, allowedTools, category, description });
+              } catch (e) {
+                console.warn(`[claude.scanMyGithubRepos][${traceId}] Skip ${file.path}:`, e);
+              }
+            }));
+          } catch (e) {
+            console.warn(`[claude.scanMyGithubRepos][${traceId}] Skip repo ${repo.full_name}:`, e);
+          }
+        }));
+      }
+
+      console.log(`[claude.scanMyGithubRepos][${traceId}] Total skills found: ${allSkills.length}`);
+      return {
+        skills: allSkills,
+        reposScanned: repos.length,
+        reposWithSkills: Array.from(new Set(allSkills.map((s) => s.repoName))).length,
+      };
+    }),
+
   /** Parse a .mcp.json or ~/.claude.json snippet and return server list */
   parseMcpConfig: protectedProcedure
     .input(z.object({ raw: z.string().min(1).max(200_000) }))
