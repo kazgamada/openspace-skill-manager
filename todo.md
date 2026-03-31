@@ -156,3 +156,7 @@
 - [x] DashboardLayout.tsx: 各メニュー項目にマニュアルテキスト（説明文）を定義
 - [x] DashboardLayout.tsx: ホバー時に右側にマニュアルパネル（ツールチップ）を表示するUIを実装
 - [x] 第1階層・第2階層の全メニュー項目に対応
+
+## スキル一覧表示改善（list-smビュー）
+- [x] MySkills.tsx: list-smビューにタイトル・更新日時・引用元リポジトリを表示
+- [x] Community.tsx: list-smビューにタイトル・更新日時・引用元リポジトリを表示

@@ -228,16 +228,36 @@ function MySkillCard({ skill, tags, viewMode, onNavigate, onUpload, onDelete, up
 
   if (viewMode === "list-sm") {
     return (
-      <div className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border bg-card hover:bg-muted/20 transition-colors cursor-pointer group" onClick={() => onNavigate(`/skills/${skill.id}`)}
+      <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-card hover:bg-muted/20 transition-colors cursor-pointer group" onClick={() => onNavigate(`/skills/${skill.id}`)}
       >
         <div className="w-6 h-6 rounded bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
           <Zap className="w-3 h-3 text-primary" />
         </div>
-        <p className="text-xs font-medium truncate flex-1">{skill.name}</p>
-        {skill.category && <Badge variant="outline" className="text-[10px] px-1.5 py-0 hidden sm:block shrink-0">{skill.category}</Badge>}
-        <span className="text-[10px] text-muted-foreground hidden md:block shrink-0">
+        {/* タイトル */}
+        <p className="text-xs font-semibold truncate w-40 sm:w-52 shrink-0">{skill.name}</p>
+        {/* 更新日時 */}
+        <span className="text-[10px] text-muted-foreground hidden sm:flex items-center gap-1 w-28 shrink-0">
+          <Clock className="w-3 h-3" />
           {formatDistanceToNow(new Date(skill.updatedAt), { addSuffix: true, locale: ja })}
         </span>
+        {/* 引用元リポジトリ */}
+        <div className="hidden md:flex items-center gap-1 flex-1 min-w-0">
+          {sourceLink ? (
+            <a
+              href={sourceLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-[10px] text-blue-400/70 hover:text-blue-400 truncate transition-colors"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <ExternalLink className="w-3 h-3 shrink-0" />
+              <span className="truncate">{sourceLink.replace('https://github.com/', '')}</span>
+            </a>
+          ) : (
+            <span className="text-[10px] text-muted-foreground/40">—</span>
+          )}
+        </div>
+        {isNew && <Badge className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 h-4 px-1 shrink-0">NEW</Badge>}
         {menu}
       </div>
     );

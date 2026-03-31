@@ -13,6 +13,8 @@ import {
 import { useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
+import { formatDistanceToNow } from "date-fns";
+import { ja } from "date-fns/locale";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -456,33 +458,51 @@ function SkillCard({ skill, viewMode, onInstall, isInstalling }: SkillCardProps)
   }
 
   if (viewMode === "list-sm") {
-    // リスト小: コンパクトな1行表示
+    // リスト小: タイトル・更新日時・引用元リポジトリを表示
+    const repoLabel = skill.repoOwner && skill.repoName
+      ? `${skill.repoOwner}/${skill.repoName}`
+      : null;
+    const repoHref = skill.repoOwner && skill.repoName
+      ? `https://github.com/${skill.repoOwner}/${skill.repoName}`
+      : null;
     return (
-      <div className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border bg-card hover:bg-muted/20 transition-colors">
+      <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-card hover:bg-muted/20 transition-colors">
         <div className="w-6 h-6 rounded bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
           <Zap className="w-3 h-3 text-primary" />
         </div>
-        <div className="flex-1 min-w-0 flex items-center gap-2">
-          <p className="text-xs font-medium truncate">{skill.name}</p>
+        {/* タイトル */}
+        <div className="flex items-center gap-1.5 w-40 sm:w-52 shrink-0 min-w-0">
+          <p className="text-xs font-semibold truncate">{skill.name}</p>
           {isNew && <Badge className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 h-4 px-1 shrink-0">NEW</Badge>}
-          {isSynced && <Github className="w-3 h-3 text-primary/50 shrink-0" />}
           {skill.isInstalled && <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />}
-          <p className="text-[10px] text-muted-foreground truncate hidden sm:block">{shortDesc}</p>
-          {githubUrl && (
+        </div>
+        {/* 更新日時 */}
+        <span className="text-[10px] text-muted-foreground hidden sm:flex items-center gap-1 w-28 shrink-0">
+          <Clock className="w-3 h-3" />
+          {skill.lastSyncedAt
+            ? formatDistanceToNow(new Date(skill.lastSyncedAt), { addSuffix: true, locale: ja })
+            : "—"}
+        </span>
+        {/* 引用元リポジトリ */}
+        <div className="hidden md:flex items-center gap-1 flex-1 min-w-0">
+          {repoHref ? (
             <a
-              href={githubUrl}
+              href={repoHref}
               target="_blank"
               rel="noopener noreferrer"
-              className="hidden lg:flex items-center gap-1 text-[10px] text-primary/60 hover:text-primary transition-colors shrink-0"
+              className="flex items-center gap-1 text-[10px] text-blue-400/70 hover:text-blue-400 truncate transition-colors"
               onClick={(e) => e.stopPropagation()}
             >
-              <Github className="w-3 h-3" />
+              <Github className="w-3 h-3 shrink-0" />
+              <span className="truncate">{repoLabel}</span>
             </a>
+          ) : (
+            <span className="text-[10px] text-muted-foreground/40">—</span>
           )}
         </div>
-        <div className="flex items-center gap-2 shrink-0 text-[10px] text-muted-foreground">
-          <span className="hidden md:flex items-center gap-1"><Star className="w-3 h-3 text-amber-400" />{skill.stars}</span>
-          <span className="hidden md:block w-16"><QualityBar score={skill.qualityScore} /></span>
+        {/* 品質・インストール */}
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="hidden lg:block w-14"><QualityBar score={skill.qualityScore} /></span>
           <Button
             size="sm"
             variant={skill.isInstalled ? "outline" : "default"}
