@@ -37,6 +37,7 @@ import {
   deleteSkillSource,
   getCommunitySkillsBySource,
   removeDuplicateCommunitySkills,
+  deduplicateAllSkills,
   getUserIntegrations,
   addUserIntegration,
   updateUserIntegration,
@@ -963,40 +964,26 @@ const claudeRouter = router({
 
   // ─── GitHub Skill Fetch ───────────────────────────────────────────────────
   /** Fetch SKILL.md files from a public GitHub repository */
-   fetchGithubSkills: protectedProcedure
+  fetchGithubSkills: protectedProcedure
     .input(
       z.object({
         repoUrl: z.string().url(), // e.g. https://github.com/anthropics/skills
         subPath: z.string().default(""), // optional subdirectory e.g. "skills"
         maxFiles: z.number().min(1).max(30).default(20),
-        githubToken: z.string().optional(), // 連携アカウントのtoken（プライベートリポジトリ・レートリミット対策）
       })
     )
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input }) => {
       const traceId = Math.random().toString(36).slice(2, 8).toUpperCase();
-      // 連携アカウントのtokenが指定されていない場合、ユーザーの連携設定から最初のGitHubトークンを取得
-      let effectiveToken = input.githubToken;
-      if (!effectiveToken) {
-        const integrations = await getUserIntegrations(ctx.user.id, "github");
-        const connectedGithub = integrations.find((i) => i.status === "connected");
-        if (connectedGithub) {
-          try { effectiveToken = (JSON.parse(connectedGithub.config) as Record<string, string>).token; } catch {}
-        }
-      }
-      const githubHeaders: Record<string, string> = {
-        Accept: "application/vnd.github.v3+json",
-        "User-Agent": "OSM/1.0",
-      };
-      if (effectiveToken) githubHeaders["Authorization"] = `Bearer ${effectiveToken}`;
       try {
         // Parse owner/repo from URL
         const urlMatch = input.repoUrl.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?(?:\/|$)/);
         if (!urlMatch) throw new TRPCError({ code: "BAD_REQUEST", message: "有効なGitHub URLを入力してください" });
         const [, owner, repo] = urlMatch;
+
         // Recursively list files using GitHub Trees API
         const treeRes = await fetch(
           `https://api.github.com/repos/${owner}/${repo}/git/trees/HEAD?recursive=1`,
-          { headers: githubHeaders }
+          { headers: { Accept: "application/vnd.github.v3+json", "User-Agent": "OSM/1.0" } }
         );
         if (!treeRes.ok) throw new TRPCError({ code: "BAD_REQUEST", message: `GitHub API エラー: ${treeRes.status} ${treeRes.statusText}` });
         const treeData = await treeRes.json() as { tree: { path: string; type: string }[] };
@@ -1602,7 +1589,7 @@ const settingsRouter = router({
       return { success: true };
     }),
 
-  testIntegrationLegacy: protectedProcedure
+  testIntegration: protectedProcedure
     .input(z.object({
       service: z.enum(["claude", "github", "googleDrive", "localFolder"]),
     }))
@@ -1646,65 +1633,6 @@ const settingsRouter = router({
       return { success: true };
     }),
 
-  // ── 複数アカウント連携 (user_integrations) ──
-  listIntegrations: protectedProcedure
-    .input(z.object({ type: z.string().optional() }))
-    .query(async ({ input, ctx }) => {
-      const rows = await getUserIntegrations(ctx.user.id, input.type);
-      return rows.map((r) => ({
-        ...r,
-        config: (() => { try { return JSON.parse(r.config) as Record<string, string>; } catch { return {}; } })(),
-      }));
-    }),
-  addIntegration: protectedProcedure
-    .input(z.object({
-      type: z.enum(["github", "googleDrive", "localFolder", "claude"]),
-      label: z.string().min(1).max(128),
-      config: z.record(z.string(), z.string()),
-    }))
-    .mutation(async ({ input, ctx }) => {
-      const row = await addUserIntegration(ctx.user.id, input);
-      return { ...row, config: (() => { try { return JSON.parse(row.config) as Record<string, string>; } catch { return {}; } })() };
-    }),
-  updateIntegration: protectedProcedure
-    .input(z.object({
-      id: z.number(),
-      label: z.string().min(1).max(128).optional(),
-      config: z.record(z.string(), z.string()).optional(),
-    }))
-    .mutation(async ({ input, ctx }) => {
-      await updateUserIntegration(input.id, ctx.user.id, {
-        ...(input.label !== undefined ? { label: input.label } : {}),
-        ...(input.config !== undefined ? { config: input.config as Record<string, string> } : {}),
-      });
-      return { success: true };
-    }),
-  deleteIntegration: protectedProcedure
-    .input(z.object({ id: z.number() }))
-    .mutation(async ({ input, ctx }) => {
-      await deleteUserIntegration(input.id, ctx.user.id);
-      return { success: true };
-    }),
-  testIntegration: protectedProcedure
-    .input(z.object({ id: z.number() }))
-    .mutation(async ({ input, ctx }) => {
-      const rows = await getUserIntegrations(ctx.user.id);
-      const row = rows.find((r) => r.id === input.id);
-      if (!row) throw new TRPCError({ code: "NOT_FOUND" });
-      let config: Record<string, string> = {};
-      try { config = JSON.parse(row.config); } catch {}
-      let success = false;
-      let message = "設定が不完全です";
-      if (row.type === "github" && config.token) { success = true; message = "GitHub接続成功"; }
-      else if (row.type === "claude" && (config.apiKey || config.skillsDir)) { success = true; message = "Claude接続成功"; }
-      else if (row.type === "googleDrive" && config.folderId) { success = true; message = "Google Drive接続成功"; }
-      else if (row.type === "localFolder" && config.path) { success = true; message = "ローカルフォルダー接続成功"; }
-      await updateUserIntegration(input.id, ctx.user.id, {
-        status: success ? "connected" : "error",
-        lastTestedAt: new Date(),
-      });
-      return { success, message };
-    }),
   updatePreferences: protectedProcedure
     .input(z.object({
       theme: z.string().optional(),
@@ -1758,6 +1686,10 @@ const adminRouter = router({
 
   allSkills: adminProcedure.query(async () => {
     return getAllSkills();
+  }),
+  deduplicateSkills: adminProcedure.mutation(async () => {
+    const result = await deduplicateAllSkills();
+    return { success: true, removed: result.removed, message: `重複スキル ${result.removed} 件を削除しました` };
   }),
 });
 

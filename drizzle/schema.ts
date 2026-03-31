@@ -189,21 +189,25 @@ export type UserSettings = typeof userSettings.$inferSelect;
 export type InsertUserSettings = typeof userSettings.$inferInsert;
 
 // ─────────────────────────────────────────────
-// User Integrations (複数アカウント・フォルダー連携)
-// type: "github" | "googleDrive" | "localFolder" | "claude"
-// config: JSON (type別のフィールドを格納)
-//   github:      { token, username, label }
-//   googleDrive: { folderId, folderName, credentials?, label }
-//   localFolder: { path, watchInterval?, label }
-//   claude:      { apiKey, skillsDir?, label }
+// User Integrations (複数アカウント対応)
 // ─────────────────────────────────────────────
 export const userIntegrations = mysqlTable("user_integrations", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
-  type: varchar("type", { length: 32 }).notNull(), // "github" | "googleDrive" | "localFolder" | "claude"
-  label: varchar("label", { length: 128 }).notNull(), // ユーザー定義の表示名
-  config: text("config").notNull(), // JSON
-  status: varchar("status", { length: 16 }).default("unknown").notNull(), // "connected" | "error" | "unknown"
+  // サービス種別: claude | github | google_drive | local_folder
+  serviceType: varchar("serviceType", { length: 32 }).notNull(),
+  // ユーザーが付けたラベル（例: "仕事用GitHub", "個人用"）
+  label: varchar("label", { length: 128 }).notNull(),
+  // 認証情報（APIキー・トークン等）
+  token: text("token"),
+  // サービス固有の設定（JSON）
+  // GitHub: { username, repoFilter }
+  // Google Drive: { folderId, folderName }
+  // Local Folder: { path }
+  // Claude: { mcpPath, model }
+  config: text("config"),
+  // 接続状態
+  status: varchar("status", { length: 32 }).default("disconnected").notNull(), // connected | disconnected | error
   lastTestedAt: timestamp("lastTestedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

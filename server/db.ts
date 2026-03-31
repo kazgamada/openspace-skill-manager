@@ -14,6 +14,8 @@ import {
   InsertSkillSource,
   UserSettings,
   InsertUserSettings,
+  UserIntegration,
+  InsertUserIntegration,
   communitySkills,
   executionLogs,
   healthThresholds,
@@ -23,7 +25,6 @@ import {
   users,
   userSettings,
   userIntegrations,
-  UserIntegration,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -578,56 +579,75 @@ export async function removeDuplicateCommunitySkills(): Promise<number> {
   return toDelete.length;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// User Integrations CRUD
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── Deduplicate Skills ────────────────────────────────────────────────────────
+/** 同一ユーザーの同名スキルを重複排除（最新updatedAtのものを残し、古いものを削除） */
+export async function deduplicateUserSkills(userId: number): Promise<{ removed: number }> {
+  const db = await getDb();
+  if (!db) return { removed: 0 };
+  const userSkills = await db.select().from(skills).where(eq(skills.authorId, userId)).orderBy(desc(skills.updatedAt));
+  const seen = new Map<string, string>(); // name → id (keep)
+  const toDelete: string[] = [];
+  for (const s of userSkills) {
+    const key = s.name.toLowerCase().trim();
+    if (seen.has(key)) {
+      toDelete.push(s.id);
+    } else {
+      seen.set(key, s.id);
+    }
+  }
+  if (toDelete.length > 0) {
+    for (const id of toDelete) {
+      await db.delete(skills).where(eq(skills.id, id));
+    }
+  }
+  return { removed: toDelete.length };
+}
 
-export async function getUserIntegrations(userId: number, type?: string): Promise<UserIntegration[]> {
+/** 全ユーザーのスキルを重複排除（管理者用） */
+export async function deduplicateAllSkills(): Promise<{ removed: number }> {
+  const db = await getDb();
+  if (!db) return { removed: 0 };
+  const allSkillRows = await db.select().from(skills).orderBy(desc(skills.updatedAt));
+  const seen = new Map<string, string>(); // `${authorId}:${name}` → id
+  const toDelete: string[] = [];
+  for (const s of allSkillRows) {
+    const key = `${s.authorId}:${s.name.toLowerCase().trim()}`;
+    if (seen.has(key)) {
+      toDelete.push(s.id);
+    } else {
+      seen.set(key, s.id);
+    }
+  }
+  if (toDelete.length > 0) {
+    for (const id of toDelete) {
+      await db.delete(skills).where(eq(skills.id, id));
+    }
+  }
+  return { removed: toDelete.length };
+}
+
+// ─── User Integrations (複数アカウント対応) ────────────────────────────────────
+export async function getUserIntegrations(userId: number): Promise<UserIntegration[]> {
   const db = await getDb();
   if (!db) return [];
-  const conditions = type
-    ? and(eq(userIntegrations.userId, userId), eq(userIntegrations.type, type))
-    : eq(userIntegrations.userId, userId);
-  return db.select().from(userIntegrations).where(conditions).orderBy(userIntegrations.createdAt);
+  return db.select().from(userIntegrations).where(eq(userIntegrations.userId, userId)).orderBy(userIntegrations.createdAt);
 }
 
-export async function addUserIntegration(
-  userId: number,
-  data: { type: string; label: string; config: Record<string, string> }
-): Promise<UserIntegration> {
+export async function addUserIntegration(data: Omit<InsertUserIntegration, "id" | "createdAt" | "updatedAt">): Promise<number> {
   const db = await getDb();
-  if (!db) throw new Error("DB unavailable");
-  const [result] = await db.insert(userIntegrations).values({
-    userId,
-    type: data.type,
-    label: data.label,
-    config: JSON.stringify(data.config),
-    status: "unknown",
-  });
-  const [row] = await db.select().from(userIntegrations).where(eq(userIntegrations.id, (result as { insertId: number }).insertId));
-  return row;
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(userIntegrations).values(data);
+  return (result[0] as { insertId: number }).insertId;
 }
 
-export async function updateUserIntegration(
-  id: number,
-  userId: number,
-  data: Partial<{ label: string; config: Record<string, string>; status: string; lastTestedAt: Date }>
-): Promise<void> {
+export async function updateUserIntegration(id: number, userId: number, data: Partial<Pick<UserIntegration, "label" | "token" | "config" | "status" | "lastTestedAt">>): Promise<void> {
   const db = await getDb();
   if (!db) return;
-  const updateData: Record<string, unknown> = {};
-  if (data.label !== undefined) updateData.label = data.label;
-  if (data.config !== undefined) updateData.config = JSON.stringify(data.config);
-  if (data.status !== undefined) updateData.status = data.status;
-  if (data.lastTestedAt !== undefined) updateData.lastTestedAt = data.lastTestedAt;
-  await db.update(userIntegrations)
-    .set(updateData)
-    .where(and(eq(userIntegrations.id, id), eq(userIntegrations.userId, userId)));
+  await db.update(userIntegrations).set(data).where(and(eq(userIntegrations.id, id), eq(userIntegrations.userId, userId)));
 }
 
 export async function deleteUserIntegration(id: number, userId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
-  await db.delete(userIntegrations)
-    .where(and(eq(userIntegrations.id, id), eq(userIntegrations.userId, userId)));
+  await db.delete(userIntegrations).where(and(eq(userIntegrations.id, id), eq(userIntegrations.userId, userId)));
 }

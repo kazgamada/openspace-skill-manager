@@ -14,7 +14,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  Activity, AlertTriangle, Brain, CheckCircle2, Clock, Eye, GitBranch,
+  Activity, AlertTriangle, Brain, CheckCircle2, Clock, ExternalLink, Eye, GitBranch,
   Globe, Lock, MoreHorizontal, Plus, RefreshCw, Search, Trash2, Wrench,
   XCircle, Zap,
 } from "lucide-react";
@@ -141,6 +141,8 @@ interface MySkillCardProps {
     tags: string | null;
     isPublic: boolean;
     updatedAt: Date;
+    createdAt?: Date | null;
+    sourceRepo?: string | null;
   };
   tags: string[];
   viewMode: ViewMode;
@@ -152,10 +154,14 @@ interface MySkillCardProps {
 }
 
 function MySkillCard({ skill, tags, viewMode, onNavigate, onUpload, onDelete, uploadPending, deletePending }: MySkillCardProps) {
-  // 説明を30-40文字に切り詰め（スペースが空いている箇所に表示）
   const shortDesc = skill.description
     ? (skill.description.length > 40 ? skill.description.slice(0, 38) + "…" : skill.description)
     : "説明なし";
+  // 直近7日以内に作成されたスキルはNewバッジを表示
+  const isNew = skill.createdAt
+    ? (Date.now() - new Date(skill.createdAt).getTime()) < 7 * 24 * 60 * 60 * 1000
+    : false;
+  const sourceLink = skill.sourceRepo ?? null;
   const menu = (
     <DropdownMenu>
       <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
@@ -192,10 +198,17 @@ function MySkillCard({ skill, tags, viewMode, onNavigate, onUpload, onDelete, up
               <Zap className="w-4 h-4 text-primary" />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-0.5">
+              <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                 <p className="text-sm font-semibold">{skill.name}</p>
                 {skill.category && <Badge variant="outline" className="text-[10px] px-1.5 py-0">{skill.category}</Badge>}
-                {skill.isPublic ? <><Globe className="w-3 h-3 text-primary" /></> : <><Lock className="w-3 h-3 text-muted-foreground" /></>}
+                {isNew && <Badge className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 h-4 px-1.5">NEW</Badge>}
+                {skill.isPublic ? <Globe className="w-3 h-3 text-primary" /> : <Lock className="w-3 h-3 text-muted-foreground" />}
+                {sourceLink && (
+                  <a href={sourceLink} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}
+                    className="text-[10px] text-blue-400/70 hover:text-blue-400 flex items-center gap-0.5 transition-colors">
+                    <ExternalLink className="w-2.5 h-2.5" />元リポ
+                  </a>
+                )}
               </div>
               <p className="text-xs text-muted-foreground line-clamp-1">{shortDesc}</p>
               <div className="flex items-center gap-2 mt-1">
@@ -263,8 +276,19 @@ function MySkillCard({ skill, tags, viewMode, onNavigate, onUpload, onDelete, up
               <Zap className="w-4 h-4 text-primary" />
             </div>
             <div className="min-w-0">
-              <p className="text-sm font-semibold truncate">{skill.name}</p>
-              {skill.category && <Badge variant="outline" className="text-[10px] px-1.5 py-0 mt-0.5">{skill.category}</Badge>}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <p className="text-sm font-semibold truncate">{skill.name}</p>
+                {isNew && <Badge className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 h-4 px-1.5">NEW</Badge>}
+              </div>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                {skill.category && <Badge variant="outline" className="text-[10px] px-1.5 py-0">{skill.category}</Badge>}
+                {sourceLink && (
+                  <a href={sourceLink} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}
+                    className="text-[10px] text-blue-400/70 hover:text-blue-400 flex items-center gap-0.5 transition-colors">
+                    <ExternalLink className="w-2.5 h-2.5" />元リポ
+                  </a>
+                )}
+              </div>
             </div>
           </div>
           {menu}

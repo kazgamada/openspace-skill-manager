@@ -132,17 +132,17 @@
 - [x] TSエラー 0件・Vitest 48件全通過
 
 ## 5機能追加（スキル説明・Newバッジ・重複排除・モニター通知・Agent連携サブナビ）
-- [ ] スキル説明30-40字: MySkills.tsx リスト表示の空きスペースに description を表示
-- [ ] スキル説明30-40字: Community.tsx 各レイアウトの空きスペースに description を表示
-- [ ] Newバッジ: 直近7日以内に同期・作成されたスキルに「New」バッジを表示（MySkills/Community両方）
-- [ ] ソースリポジトリリンク: everything-claude-code 由来スキルカードに「元リポジトリを開く」ボタン追加
-- [ ] 重複排除バックエンド: skills.create / community.install 時にタイトル+更新日時が一致する場合はエラー返却
-- [ ] 重複排除バックエンド: 既存の重複レコードを一括削除する admin.deduplicateSkills ルーター追加
-- [ ] 重複排除フロントエンド: インポート時に重複検出メッセージを表示してスキップ
-- [ ] プロジェクトモニター通知バックエンド: claude.monitorProject ルーター（プロジェクト情報→スキル推薦→通知保存）
-- [ ] プロジェクトモニター通知フロントエンド: Dashboard.tsx に「推薦スキル通知」カードを表示
-- [ ] Agent連携サブナビ: DashboardLayout.tsx の「Agent連携」を第2階層メニューに変換（GitHub取得・AIマージ・差分インポート・自動タグ付け・単体インポート・スマート起動・MCP設定）
-- [ ] Agent連携サブナビ: ClaudeIntegration.tsx をサブナビ対応（URL パスで各タブに直接遷移）
+- [x] スキル説明30-40字: MySkills.tsx リスト表示の空きスペースに description を表示
+- [x] スキル説明30-40字: Community.tsx 各レイアウトの空きスペースに description を表示
+- [x] Newバッジ: 直近7日以内に同期・作成されたスキルに「New」バッジを表示（MySkills/Community両方）
+- [x] ソースリポジトリリンク: everything-claude-code 由来スキルカードに「元リポジトリを開く」ボタン追加
+- [x] 重複排除バックエンド: skills.create / community.install 時にタイトル+更新日時が一致する場合はエラー返却
+- [x] 重複排除バックエンド: 既存の重複レコードを一括削除する admin.deduplicateSkills ルーター追加
+- [x] 重複排除フロントエンド: インポート時に重複検出メッセージを表示してスキップ
+- [x] プロジェクトモニター通知バックエンド: claude.monitorProject ルーター（プロジェクト情報→スキル推薦→通知保存）
+- [x] プロジェクトモニター通知フロントエンド: Dashboard.tsx に「推薦スキル通知」カードを表示
+- [x] Agent連携サブナビ: DashboardLayout.tsx の「Agent連携」を第2階層メニューに変換（GitHub取得・AIマージ・差分インポート・自動タグ付け・単体インポート・スマート起動・MCP設定）
+- [x] Agent連携サブナビ: ClaudeIntegration.tsx をサブナビ対応（URL パスで各タブに直接遷移）
 
 ## サイドバー第2階層ナビゲーション統一（マイスキル・スキル広場・Agent連携）
 - [x] DashboardLayout: マイスキル配下に「スキル一覧」「ヘルスモニター」を第2階層メニューとして追加
@@ -156,10 +156,3 @@
 - [x] DashboardLayout.tsx: 各メニュー項目にマニュアルテキスト（説明文）を定義
 - [x] DashboardLayout.tsx: ホバー時に右側にマニュアルパネル（ツールチップ）を表示するUIを実装
 - [x] 第1階層・第2階層の全メニュー項目に対応
-
-## 複数アカウント・フォルダー連携機能
-- [x] DBスキーマ: integrations テーブル（id, userId, type, label, token/url, folderId, status, lastTestedAt）を追加
-- [x] server/db.ts: 連携CRUD（getIntegrations, addIntegration, updateIntegration, deleteIntegration, testIntegration）を追加
-- [x] server/routers.ts: integrations tRPCプロシージャーを追加（list, add, update, delete, test）
-- [x] Integrations.tsx: 複数アカウント登録・一覧・削除・テストUIに書き直し（GitHub/GoogleDrive/LocalFolder/Claude対応）
-- [x] ClaudeIntegration.tsx (github): 連携アカウント一覧を表示し選択してスキル取得できる機能を追加

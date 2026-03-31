@@ -1,7 +1,7 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "e68ae3a5-bdac-45f6-b81c-a97002c641df",
+  "id": "e030b5bc-6f36-47ee-84d3-db0b4f86bbf3",
   "prevId": "76dcf808-a42f-44ba-b455-81f78eb517cd",
   "tables": {
     "community_skills": {
@@ -760,8 +760,8 @@
           "notNull": true,
           "autoincrement": false
         },
-        "type": {
-          "name": "type",
+        "serviceType": {
+          "name": "serviceType",
           "type": "varchar(32)",
           "primaryKey": false,
           "notNull": true,
@@ -774,20 +774,27 @@
           "notNull": true,
           "autoincrement": false
         },
+        "token": {
+          "name": "token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "config": {
           "name": "config",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
         },
         "status": {
           "name": "status",
-          "type": "varchar(16)",
+          "type": "varchar(32)",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
-          "default": "'unknown'"
+          "default": "'disconnected'"
         },
         "lastTestedAt": {
           "name": "lastTestedAt",
