@@ -1749,10 +1749,18 @@ const settingsRouter = router({
         try { integrations = JSON.parse(s.integrations); } catch {}
       }
       // If caller passed config (e.g. unsaved form values), merge them in for testing
-      const svc = {
-        ...(integrations[input.service] as Record<string, unknown> | undefined ?? {}),
-        ...(input.config ?? {}),
-      } as Record<string, unknown>;
+      // But if a field in config is empty string, fall back to the DB value (password fields left blank = keep existing)
+      const dbSvc = (integrations[input.service] as Record<string, unknown> | undefined ?? {});
+      const mergedConfig: Record<string, unknown> = { ...dbSvc };
+      if (input.config) {
+        for (const [k, v] of Object.entries(input.config)) {
+          // Only override if the incoming value is non-empty
+          if (v !== "" && v !== null && v !== undefined) {
+            mergedConfig[k] = v;
+          }
+        }
+      }
+      const svc = mergedConfig as Record<string, unknown>;
       let success = false;
       let message = "未設定";
       if (svc) {
