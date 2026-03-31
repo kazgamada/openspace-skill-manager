@@ -46,6 +46,7 @@ import {
   Users,
   Wand2,
   Zap,
+  Monitor,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -275,6 +276,8 @@ const claudeSubItems = [
   { icon: Sparkles,  label: "スマート起動", path: "/claude/smart" },
   { icon: Wand2,     label: "MCP設定",      path: "/claude/mcp" },
 ];
+
+// モニターのサブメニュー（なし: 直接リンク）
 
 // ユーザー用「設定」サブメニュー
 const userSettingsSubItems = [
@@ -664,6 +667,19 @@ function DashboardLayoutContent({
                   setLocation={setLocation}
                 />
               )}
+
+              {/* ─── Claude Code モニター ─── */}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={location === "/monitor"}
+                  onClick={() => setLocation("/monitor")}
+                  tooltip="Claude Codeモニター"
+                  className="h-9 font-normal"
+                >
+                  <Monitor className={`h-4 w-4 ${location === "/monitor" ? "text-primary" : "text-muted-foreground"}`} />
+                  <span className="text-sm">Codeモニター</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
 
               {/* ─── 設定（ユーザー用）+ サブメニュー ─── */}
               {!isCollapsed && (

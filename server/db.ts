@@ -190,6 +190,7 @@ export async function getCommunitySkills(opts?: {
   category?: string;
   limit?: number;
   offset?: number;
+  sortBy?: "crawlRank" | "stars" | "downloads" | "qualityScore" | "cachedAt";
 }): Promise<(CommunitySkill & { repoOwner?: string | null; repoName?: string | null })[]> {
   const db = await getDb();
   if (!db) return [];
@@ -233,7 +234,13 @@ export async function getCommunitySkills(opts?: {
     .from(communitySkills)
     .leftJoin(skillSources, eq(communitySkills.sourceId, skillSources.id))
     .where(conditions.length > 0 ? and(...conditions) : undefined)
-    .orderBy(desc(communitySkills.stars))
+    .orderBy(
+      opts?.sortBy === "stars" ? desc(communitySkills.stars)
+      : opts?.sortBy === "downloads" ? desc(communitySkills.downloads)
+      : opts?.sortBy === "qualityScore" ? desc(communitySkills.qualityScore)
+      : opts?.sortBy === "cachedAt" ? desc(communitySkills.cachedAt)
+      : desc(communitySkills.crawlRank)  // デフォルト: crawlRank降順
+    )
     .limit(opts?.limit ?? 20)
     .offset(opts?.offset ?? 0);
   return rows;

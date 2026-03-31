@@ -650,6 +650,7 @@ export default function Community() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
   const [searchInput, setSearchInput] = useState("");
+  const [sortBy, setSortBy] = useState<"crawlRank" | "stars" | "downloads" | "qualityScore" | "cachedAt">("crawlRank");
   const [viewMode, setViewMode] = useViewMode("community-view-mode", "tile-lg");
   const utils = trpc.useUtils();
   const [location, setLocation] = useLocation();
@@ -663,6 +664,7 @@ export default function Community() {
     search: search || undefined,
     category: category !== "all" ? category : undefined,
     limit: 100,
+    sortBy,
   });
 
   const installMutation = trpc.community.install.useMutation({
@@ -776,6 +778,18 @@ export default function Community() {
                 <TrendingUp className="w-3.5 h-3.5" />
                 {skills.length} 件
               </div>
+              {/* ソートセレクター */}
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+                className="text-xs bg-input border border-border rounded-md px-2 py-1.5 text-foreground h-8 cursor-pointer"
+              >
+                <option value="crawlRank">ランク順</option>
+                <option value="stars">スター順</option>
+                <option value="downloads">DL順</option>
+                <option value="qualityScore">品質順</option>
+                <option value="cachedAt">新着順</option>
+              </select>
               <ViewToggle value={viewMode} onChange={setViewMode} />
             </div>
 

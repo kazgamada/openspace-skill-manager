@@ -213,3 +213,18 @@
 - [x] community.triggerCrawl: 手動クロールトリガーエンドポイント実装
 - [x] community.getCrawlStats: クロール統計情報取得エンドポイント実装
 - [x] Community.tsx: 「今すぐクロール」ボタンと収集統計（件数・最終実行日時）をヘッダーに追加
+
+## Claude Codeリアルタイムモニター＆スキル提案・プッシュ
+- [x] スキル広場: crawlRankデフォルトソート（降順）をCommunity.tsxに追加（ソートセレクター UI付き）
+- [x] 自動同期完了時: ダッシュボード通知カード「N件のスキルが更新されました」をWebSocket経由で表示
+- [x] DB: claude_monitor_sessionsテーブルを追加（セッションID・開始時刻・ツール使用履歴・検出パターン・提案スキル）
+- [x] DB: skill_suggestionsテーブルを追加（ユーザーID・提案スキルID・理由・ステータス・提案日時）
+- [x] server/claude-monitor.ts: Claude Codeのログ解析・パターン検出・スキル提案ロジックを実装
+- [x] monitor.reportActivity tRPCエンドポイント: Claude Codeからの作業ログを受信・解析
+- [x] monitor.getSuggestions tRPCエンドポイント: 提案スキル一覧を取得
+- [x] monitor.dismissSuggestion / installSuggestion tRPCエンドポイント
+- [x] monitor.getRecentSessions tRPCエンドポイント: 最近のセッション一覧
+- [x] ClaudeMonitor.tsx: リアルタイムモニター画面（作業アクティビティ入力・提案スキル・インストールボタン）
+- [x] サイドバーに「Codeモニター」メニューを追加（/monitorルート）
+- [x] server/claude-monitor.test.ts: detectPatternsのユニットテスト（13テスト）追加
+- [ ] Claude Code用のMCPサーバー設定ファイルを生成するUI（設定 → 連携 → Claude Code）

@@ -247,3 +247,47 @@ export const githubSyncLogs = mysqlTable("github_sync_logs", {
 
 export type GithubSyncLog = typeof githubSyncLogs.$inferSelect;
 export type InsertGithubSyncLog = typeof githubSyncLogs.$inferInsert;
+
+// ─────────────────────────────────────────────
+// Claude Monitor Sessions (リアルタイムモニタリング)
+// ─────────────────────────────────────────────
+export const claudeMonitorSessions = mysqlTable("claude_monitor_sessions", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  // セッション識別子（Claude Codeのプロジェクト名や作業ディレクトリ）
+  sessionLabel: varchar("sessionLabel", { length: 255 }),
+  // 作業ログ（JSON配列: [{tool, input, timestamp}]）
+  activityLog: text("activityLog"),
+  // 検出されたパターン（JSON: {tools:[], errors:[], tasks:[]}）
+  detectedPatterns: text("detectedPatterns"),
+  // 最後のアクティビティ
+  lastActivityAt: timestamp("lastActivityAt").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type ClaudeMonitorSession = typeof claudeMonitorSessions.$inferSelect;
+export type InsertClaudeMonitorSession = typeof claudeMonitorSessions.$inferInsert;
+
+// ─────────────────────────────────────────────
+// Skill Suggestions (スキル提案)
+// ─────────────────────────────────────────────
+export const skillSuggestions = mysqlTable("skill_suggestions", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  sessionId: varchar("sessionId", { length: 64 }),
+  // 提案スキル（マイスキルIDまたはコミュニティスキルID）
+  skillId: varchar("skillId", { length: 64 }),
+  skillName: varchar("skillName", { length: 255 }).notNull(),
+  skillDescription: text("skillDescription"),
+  // 提案理由（例: "Bashツールを頻繁に使用しています"）
+  reason: text("reason").notNull(),
+  // 提案元（my_skills | community | github_crawl）
+  source: varchar("source", { length: 32 }).default("community").notNull(),
+  // ステータス（pending | installed | dismissed）
+  status: mysqlEnum("status", ["pending", "installed", "dismissed"]).default("pending").notNull(),
+  // 信頼スコア（0-100）
+  confidence: int("confidence").default(50).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type SkillSuggestion = typeof skillSuggestions.$inferSelect;
+export type InsertSkillSuggestion = typeof skillSuggestions.$inferInsert;

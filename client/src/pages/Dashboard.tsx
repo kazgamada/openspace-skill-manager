@@ -23,7 +23,7 @@ import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { ja } from "date-fns/locale";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 
 function StatCard({
   icon: Icon,
@@ -77,6 +77,57 @@ function EvolutionBadge({ type }: { type: string }) {
     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border ${info.cls}`}>
       {info.label}
     </span>
+  );
+}
+
+// ─── 自動同期完了通知カード ──────────────────────────────────────────────────
+
+type SyncNotification = {
+  id: string;
+  count: number;
+  timestamp: number;
+  type: "github_sync" | "skills_synced";
+};
+
+function SyncNotificationCard({
+  notifications,
+  onDismiss,
+}: {
+  notifications: SyncNotification[];
+  onDismiss: (id: string) => void;
+}) {
+  if (notifications.length === 0) return null;
+  return (
+    <div className="space-y-2">
+      {notifications.map((n) => (
+        <div
+          key={n.id}
+          className="flex items-start gap-3 px-4 py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-sm animate-in slide-in-from-top-2 duration-300"
+        >
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <span className="font-medium text-emerald-300">
+              {n.type === "github_sync" ? "GitHubマイスキル同期完了" : "スキルソース同期完了"}
+            </span>
+            <span className="text-emerald-400/80 ml-2">
+              {n.count} 件のスキルが更新されました
+            </span>
+            <span className="text-emerald-400/50 text-xs ml-2">
+              · {formatDistanceToNow(new Date(n.timestamp), { addSuffix: true, locale: ja })}
+            </span>
+          </div>
+          <button
+            onClick={() => onDismiss(n.id)}
+            className="text-emerald-400/50 hover:text-emerald-400 transition-colors shrink-0"
+          >
+            <span className="sr-only">閉じる</span>
+            <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M4 4l8 8M12 4l-8 8" />
+            </svg>
+          </button>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -214,6 +265,64 @@ export default function Dashboard() {
   const [, setLocation] = useLocation();
   const statsQuery = trpc.dashboard.stats.useQuery();
   const timelineQuery = trpc.dashboard.timeline.useQuery();
+
+  // ─── WebSocketによる自動同期完了通知 ───
+  const [syncNotifications, setSyncNotifications] = useState<SyncNotification[]>([]);
+  const wsRef = useRef<WebSocket | null>(null);
+
+  useEffect(() => {
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const wsUrl = `${protocol}//${window.location.host}/ws/evolution-events`;
+    let ws: WebSocket;
+    let reconnectTimer: ReturnType<typeof setTimeout>;
+
+    const connect = () => {
+      ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data as string) as Record<string, unknown>;
+          if (data.type === "github_sync_complete") {
+            const count = (data.created as number ?? 0) + (data.updated as number ?? 0);
+            if (count > 0) {
+              setSyncNotifications((prev) => [
+                { id: `sync_${Date.now()}`, count, timestamp: Date.now(), type: "github_sync" },
+                ...prev.slice(0, 4),
+              ]);
+              statsQuery.refetch();
+            }
+          } else if (data.type === "skills_synced") {
+            const count = data.count as number ?? 0;
+            if (count > 0) {
+              setSyncNotifications((prev) => [
+                { id: `sync_${Date.now()}`, count, timestamp: Date.now(), type: "skills_synced" },
+                ...prev.slice(0, 4),
+              ]);
+              statsQuery.refetch();
+            }
+          }
+        } catch (parseErr) {
+          console.warn("[Dashboard WS] Failed to parse event:", parseErr);
+        }
+      };
+
+      ws.onclose = () => {
+        reconnectTimer = setTimeout(connect, 5000);
+      };
+    };
+
+    connect();
+    return () => {
+      clearTimeout(reconnectTimer);
+      wsRef.current?.close();
+    };
+  }, []);
+
+  const dismissNotification = (id: string) => {
+    setSyncNotifications((prev) => prev.filter((n) => n.id !== id));
+  };
+
   const seedMutation = trpc.admin.seedData.useMutation({
     onSuccess: () => {
       toast.success("デモデータを投入しました");
@@ -257,6 +366,9 @@ export default function Dashboard() {
             </Button>
           </div>
         </div>
+
+        {/* 自動同期完了通知 */}
+        <SyncNotificationCard notifications={syncNotifications} onDismiss={dismissNotification} />
 
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

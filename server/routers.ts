@@ -49,6 +49,8 @@ import {
 } from "./db";
 import { syncSkillSource } from "./github-sync";
 import { runGithubCrawl } from "./github-crawl";
+import { detectPatterns, generateSkillSuggestions, generateSessionId, generateSuggestionId } from "./claude-monitor";
+import type { ActivityEntry } from "./claude-monitor";
 import { invokeLLM } from "./_core/llm";
 import { broadcastEvolutionEvent } from "./_core/index";
 import { systemRouter } from "./_core/systemRouter";
@@ -370,6 +372,7 @@ const communityRouter = router({
         category: z.string().optional(),
         limit: z.number().default(20),
         offset: z.number().default(0),
+        sortBy: z.enum(["crawlRank", "stars", "downloads", "qualityScore", "cachedAt"]).optional(),
       })
     )
     .query(async ({ input }) => {
@@ -1968,6 +1971,171 @@ const adminRouter = router({
 });
 
 // ─────────────────────────────────────────────
+// Monitor Router (Claude Code リアルタイムモニター)
+// ─────────────────────────────────────────────
+const monitorRouter = router({
+  // アクティビティを報告してパターン検出・スキル提案を生成
+  reportActivity: protectedProcedure
+    .input(z.object({
+      sessionId: z.string().optional(),
+      sessionLabel: z.string().optional(),
+      activities: z.array(z.object({
+        tool: z.string(),
+        input: z.string().optional(),
+        output: z.string().optional(),
+        timestamp: z.number(),
+        isError: z.boolean().optional(),
+      })),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      const pool = (db as any).$client;
+      const userId = ctx.user.id;
+      const sessionId = input.sessionId ?? generateSessionId();
+
+      // セッションをupsert
+      const patterns = detectPatterns(input.activities as ActivityEntry[]);
+      await pool.execute(
+        `INSERT INTO claude_monitor_sessions (id, userId, sessionLabel, activityLog, detectedPatterns, lastActivityAt)
+         VALUES (?, ?, ?, ?, ?, NOW())
+         ON DUPLICATE KEY UPDATE
+           activityLog = VALUES(activityLog),
+           detectedPatterns = VALUES(detectedPatterns),
+           lastActivityAt = NOW()`,
+        [
+          sessionId,
+          userId,
+          input.sessionLabel ?? null,
+          JSON.stringify(input.activities),
+          JSON.stringify(patterns),
+        ]
+      );
+
+      // コミュニティスキルを取得してLLMで提案生成
+      const communitySkills = await getCommunitySkills({ limit: 50, offset: 0 });
+      const suggestions = await generateSkillSuggestions(
+        patterns,
+        communitySkills.map((s) => ({ id: s.id, name: s.name, description: s.description, tags: s.tags }))
+      );
+
+      // 既存のpending提案を削除して新しい提案を保存
+      await pool.execute(
+        `DELETE FROM skill_suggestions WHERE userId = ? AND status = 'pending'`,
+        [userId]
+      );
+
+      for (const sug of suggestions) {
+        await pool.execute(
+          `INSERT INTO skill_suggestions (id, userId, sessionId, skillId, skillName, skillDescription, reason, source, confidence)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            generateSuggestionId(),
+            userId,
+            sessionId,
+            sug.matchedSkillId ?? null,
+            sug.skillName,
+            sug.skillDescription,
+            sug.reason,
+            sug.source,
+            sug.confidence,
+          ]
+        );
+      }
+
+      return { sessionId, patterns, suggestionsGenerated: suggestions.length };
+    }),
+
+  // 提案スキル一覧を取得
+  getSuggestions: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    const pool = (db as any).$client;
+    const [rows] = await pool.execute(
+      `SELECT * FROM skill_suggestions WHERE userId = ? AND status = 'pending' ORDER BY confidence DESC LIMIT 20`,
+      [ctx.user.id]
+    );
+    return rows as Array<{
+      id: string; skillId: string | null; skillName: string; skillDescription: string;
+      reason: string; source: string; confidence: number; createdAt: Date;
+    }>;
+  }),
+
+  // 提案を却下
+  dismissSuggestion: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      const pool = (db as any).$client;
+      await pool.execute(
+        `UPDATE skill_suggestions SET status = 'dismissed' WHERE id = ? AND userId = ?`,
+        [input.id, ctx.user.id]
+      );
+      return { success: true };
+    }),
+
+  // 提案スキルをインストール（マイスキルに追加）
+  installSuggestion: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      const pool = (db as any).$client;
+      const [rows] = await pool.execute(
+        `SELECT * FROM skill_suggestions WHERE id = ? AND userId = ?`,
+        [input.id, ctx.user.id]
+      );
+      const sug = (rows as Array<{ skillId: string | null; skillName: string; skillDescription: string; source: string }>)[0];
+      if (!sug) throw new Error("提案が見つかりません");
+
+      // コミュニティスキルからインポートする場合
+      if (sug.skillId) {
+        const communitySkill = await getCommunitySkillById(sug.skillId);
+        if (communitySkill) {
+          await markCommunitySkillInstalled(sug.skillId);
+          const skillId = nanoid();
+          await createSkill({
+            id: skillId,
+            name: communitySkill.name,
+            description: communitySkill.description ?? "",
+            category: communitySkill.category ?? "その他",
+            authorId: ctx.user.id,
+            isLocal: false,
+            isPublic: false,
+            tags: communitySkill.tags ?? "[]",
+            allowedTools: "[]",
+            sourceRepo: null,
+            sourceFile: null,
+            mergedFrom: null,
+          });
+        }
+      }
+
+      await pool.execute(
+        `UPDATE skill_suggestions SET status = 'installed' WHERE id = ? AND userId = ?`,
+        [input.id, ctx.user.id]
+      );
+      return { success: true };
+    }),
+
+  // 最近のセッション一覧
+  getRecentSessions: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    const pool = (db as any).$client;
+    const [rows] = await pool.execute(
+      `SELECT id, sessionLabel, detectedPatterns, lastActivityAt, createdAt
+       FROM claude_monitor_sessions WHERE userId = ?
+       ORDER BY lastActivityAt DESC LIMIT 10`,
+      [ctx.user.id]
+    );
+    return (rows as Array<{
+      id: string; sessionLabel: string | null; detectedPatterns: string | null;
+      lastActivityAt: Date; createdAt: Date;
+    }>).map((r) => ({
+      ...r,
+      detectedPatterns: r.detectedPatterns ? JSON.parse(r.detectedPatterns) : null,
+    }));
+  }),
+});
+
+// ─────────────────────────────────────────────
 // App Router
 // ─────────────────────────────────────────────
 export const appRouter = router({
@@ -1988,6 +2156,7 @@ export const appRouter = router({
   storage: storageRouter,
   claude: claudeRouter,
   settings: settingsRouter,
+  monitor: monitorRouter,
 });
 
 export type AppRouter = typeof appRouter;
