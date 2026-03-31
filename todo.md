@@ -227,4 +227,4 @@
 - [x] ClaudeMonitor.tsx: リアルタイムモニター画面（作業アクティビティ入力・提案スキル・インストールボタン）
 - [x] サイドバーに「Codeモニター」メニューを追加（/monitorルート）
 - [x] server/claude-monitor.test.ts: detectPatternsのユニットテスト（13テスト）追加
-- [ ] Claude Code用のMCPサーバー設定ファイルを生成するUI（設定 → 連携 → Claude Code）
+- [x] Claude Code用のMCPサーバー設定ファイルを生成するUI（設定 → 連携 → Claude Code連携済みの場合に表示）

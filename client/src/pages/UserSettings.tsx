@@ -18,13 +18,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import {
-  AlertCircle, CheckCircle2, Clock, FolderOpen,
+  AlertCircle, CheckCircle2, Clock, Copy, FolderOpen,
   Github, HardDrive, Link2, Loader2, Play, Plus, RefreshCw,
-  Settings, Trash2, Unlink, Zap,
+  Settings, Terminal, Trash2, Unlink, Zap,
 } from "lucide-react";
 
 // ─── Service definitions ──────────────────────────────────────────────────────
@@ -247,6 +248,9 @@ function IntegrationsPanel() {
         />
       )}
 
+      {/* Claude Code MCP設定生成（Claude連携済みの場合に表示） */}
+      {(intMap["claude"]?.connected ?? false) && <ClaudeMcpConfigPanel />}
+
       {/* Configure Dialog */}
       {configuringKey && (
         <ConfigureDialog
@@ -400,7 +404,141 @@ function GithubAutoSyncPanel({
   );
 }
 
-// ─── Configure Dialog ─────────────────────────────────────────────────────────
+// ─── Claude Code MCP設定生成パネル ────────────────────────────────────────────────────────────────────────────────────
+function ClaudeMcpConfigPanel() {
+  const [serverUrl, setServerUrl] = useState("");
+  const [includeApiKey, setIncludeApiKey] = useState(false);
+
+  const generateConfig = trpc.claude.generateMcpConfig.useMutation({
+    onSuccess: () => toast.success("MCP設定を生成しました"),
+    onError: (e) => toast.error(e.message),
+  });
+
+  const handleCopy = async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(`${label}をコピーしました`);
+    } catch {
+      toast.error("クリップボードへのコピーに失敗しました");
+    }
+  };
+
+  const result = generateConfig.data;
+
+  return (
+    <Card className="card-glass border-amber-500/20">
+      <CardHeader className="pb-3 pt-4 px-4">
+        <div className="flex items-center gap-2">
+          <Terminal className="w-4 h-4 text-amber-400" />
+          <CardTitle className="text-sm font-semibold">Claude Code MCP設定</CardTitle>
+        </div>
+        <CardDescription className="text-xs mt-1">
+          OSMを Claude Code の Agent Team に接続するための{" "}
+          <code className="text-[10px] bg-muted px-1 py-0.5 rounded">~/.claude.json</code>{" "}
+          設定とオーケストレーター SKILL.md を生成します。
+        </CardDescription>
+      </CardHeader>
+
+      <CardContent className="px-4 pb-4 space-y-3">
+        {/* Server URL input */}
+        <div className="space-y-1.5">
+          <Label className="text-xs">サーバー URL（空欄の場合はデフォルトを使用）</Label>
+          <Input
+            placeholder="https://your-osm-instance.manus.space"
+            value={serverUrl}
+            onChange={(e) => setServerUrl(e.target.value)}
+            className="h-8 text-sm font-mono"
+          />
+        </div>
+
+        {/* Include API Key toggle */}
+        <div className="flex items-center justify-between">
+          <Label className="text-xs">設定に API Key プレースホルダーを含める</Label>
+          <Switch
+            checked={includeApiKey}
+            onCheckedChange={setIncludeApiKey}
+          />
+        </div>
+
+        {/* Generate button */}
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full h-8 text-xs gap-2 border-amber-500/30 text-amber-300 hover:bg-amber-500/10"
+          onClick={() => generateConfig.mutate({ serverUrl: serverUrl || undefined, includeApiKey })}
+          disabled={generateConfig.isPending}
+        >
+          {generateConfig.isPending
+            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            : <Terminal className="w-3.5 h-3.5" />
+          }
+          MCP設定を生成
+        </Button>
+
+        {/* Results */}
+        {result && (
+          <div className="space-y-3">
+            {/* ~/.claude.json snippet */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-muted-foreground">
+                  <code className="bg-muted px-1 py-0.5 rounded text-[10px]">~/.claude.json</code> に追加する設定
+                </Label>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-[10px] gap-1 px-2"
+                  onClick={() => handleCopy(result.configJson, "MCP設定")}
+                >
+                  <Copy className="w-3 h-3" />コピー
+                </Button>
+              </div>
+              <Textarea
+                readOnly
+                value={result.configJson}
+                className="text-[11px] font-mono h-28 resize-none bg-black/30 border-white/10"
+              />
+            </div>
+
+            {/* Orchestrator SKILL.md */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-muted-foreground">
+                  オーケストレーター SKILL.md
+                </Label>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-[10px] gap-1 px-2"
+                  onClick={() => handleCopy(result.orchestratorSkillMd, "SKILL.md")}
+                >
+                  <Copy className="w-3 h-3" />コピー
+                </Button>
+              </div>
+              <Textarea
+                readOnly
+                value={result.orchestratorSkillMd}
+                className="text-[11px] font-mono h-32 resize-none bg-black/30 border-white/10"
+              />
+            </div>
+
+            {/* Setup guide */}
+            <div className="p-3 rounded-lg bg-amber-500/5 border border-amber-500/20 text-xs space-y-1.5">
+              <p className="font-medium text-amber-300">セットアップ手順</p>
+              <ol className="space-y-1 text-amber-300/80 list-decimal list-inside">
+                <li>MCP設定をコピーして <code className="bg-black/30 px-1 rounded">~/.claude.json</code> の <code className="bg-black/30 px-1 rounded">mcpServers</code> に追加</li>
+                <li>SKILL.md をコピーして <code className="bg-black/30 px-1 rounded">.claude/skills/auto-skill-team.md</code> に保存</li>
+                <li>Claude Code を再起動して <code className="bg-black/30 px-1 rounded">/auto-skill-team</code> で起動</li>
+              </ol>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Configure Dialog ────────────────────────────────────────────────────────────────────────────────────
 function ConfigureDialog({
   serviceKey,
   existing,
