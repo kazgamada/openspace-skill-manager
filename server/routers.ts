@@ -42,6 +42,9 @@ import {
   addUserIntegration,
   updateUserIntegration,
   deleteUserIntegration,
+  createGithubSyncLog,
+  updateGithubSyncLog,
+  getGithubSyncLogs,
 } from "./db";
 import { syncSkillSource } from "./github-sync";
 import { invokeLLM } from "./_core/llm";
@@ -1217,7 +1220,7 @@ Output ONLY the merged SKILL.md content (starting with ---), no explanations.`;
             path: z.string(),
             repoUrl: z.string(),
           })
-        ).min(1).max(30),
+        ).min(1).max(500),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -1821,8 +1824,48 @@ const settingsRouter = router({
       notifyOnDegradation: s?.notifyOnDegradation ?? true,
       notifyOnCommunity: s?.notifyOnCommunity ?? false,
       emailDigest: s?.emailDigest ?? false,
+      autoSyncGithub: s?.autoSyncGithub ?? false,
     };
   }),
+
+  setAutoSyncGithub: protectedProcedure
+    .input(z.object({ enabled: z.boolean() }))
+    .mutation(async ({ input, ctx }) => {
+      await upsertUserSettings(ctx.user.id, { autoSyncGithub: input.enabled });
+      return { success: true, enabled: input.enabled };
+    }),
+
+  getGithubSyncLogs: protectedProcedure
+    .input(z.object({ limit: z.number().min(1).max(50).default(10) }).optional())
+    .query(async ({ input, ctx }) => {
+      return getGithubSyncLogs(ctx.user.id, input?.limit ?? 10);
+    }),
+
+  triggerGithubSync: protectedProcedure
+    .mutation(async ({ ctx }) => {
+      // Get GitHub token
+      const s = await getUserSettingsByUserId(ctx.user.id);
+      let token: string | undefined;
+      if (s?.integrations) {
+        try {
+          const integrations = JSON.parse(s.integrations) as Record<string, Record<string, unknown>>;
+          token = integrations.github?.token as string | undefined;
+        } catch {}
+      }
+      if (!token) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "GitHubトークンが設定されていません。設定→連携でPersonal Access Tokenを登録してください。",
+        });
+      }
+
+      const logId = await createGithubSyncLog(ctx.user.id);
+      // Run async (don't await — return immediately so UI doesn't block)
+      runGithubAutoSync(ctx.user.id, token, logId).catch((e) =>
+        console.error("[GithubAutoSync] background error:", e)
+      );
+      return { success: true, logId };
+    }),
 });
 
 // ─────────────────────────────────────────────
@@ -1950,6 +1993,203 @@ function mapAllowedToolsToTags(allowedTools: string[], description: string): str
   }
 
   return Array.from(tags);
+}
+
+// ─────────────────────────────────────────────
+// GitHub Auto Sync (background job)
+// ─────────────────────────────────────────────
+
+/**
+ * Runs a full GitHub auto-sync for a user:
+ * 1. Scan all repos for .claude/skills/*.md
+ * 2. Diff against existing skills (by name + content hash)
+ * 3. Import only new/changed skills
+ * 4. Update sync log
+ */
+async function runGithubAutoSync(userId: number, token: string, logId: number): Promise<void> {
+  const traceId = Math.random().toString(36).slice(2, 8).toUpperCase();
+  console.log(`[GithubAutoSync][${traceId}] Starting for user ${userId}`);
+
+  const headers = {
+    Authorization: `token ${token}`,
+    Accept: "application/vnd.github.v3+json",
+    "User-Agent": "OSM/1.0",
+  };
+
+  try {
+    // 1. Fetch all repos
+    const reposRes = await fetch(
+      "https://api.github.com/user/repos?per_page=100&sort=pushed&type=owner",
+      { headers }
+    );
+    if (!reposRes.ok) {
+      const errText = await reposRes.text();
+      throw new Error(`GitHub API error (${reposRes.status}): ${errText.slice(0, 200)}`);
+    }
+    const repos = await reposRes.json() as { name: string; full_name: string; html_url: string; default_branch: string }[];
+    console.log(`[GithubAutoSync][${traceId}] Found ${repos.length} repos`);
+
+    // 2. Collect all skills from .claude/skills/ in each repo
+    const allSkills: { name: string; path: string; raw: string; repoUrl: string; contentHash: string }[] = [];
+    const CONCURRENCY = 5;
+    for (let i = 0; i < repos.length; i += CONCURRENCY) {
+      const batch = repos.slice(i, i + CONCURRENCY);
+      await Promise.all(batch.map(async (repo) => {
+        try {
+          const treeRes = await fetch(
+            `https://api.github.com/repos/${repo.full_name}/git/trees/${repo.default_branch}?recursive=1`,
+            { headers }
+          );
+          if (!treeRes.ok) return;
+          const tree = await treeRes.json() as { tree: { path: string; type: string; sha: string; url: string }[] };
+          const skillFiles = tree.tree.filter(
+            (f) => f.type === "blob" && /^\.claude\/skills\/.+\.md$/i.test(f.path)
+          );
+          await Promise.all(skillFiles.map(async (file) => {
+            try {
+              const blobRes = await fetch(file.url, { headers });
+              if (!blobRes.ok) return;
+              const blob = await blobRes.json() as { content?: string; encoding?: string };
+              if (!blob.content || blob.encoding !== "base64") return;
+              const raw = Buffer.from(blob.content.replace(/\n/g, ""), "base64").toString("utf-8");
+              const parsed = parseSkillMd(raw);
+              const name = parsed.name !== "untitled-skill" ? parsed.name : file.path.split("/").pop()?.replace(/\.md$/i, "") ?? "untitled-skill";
+              // Simple content hash for diff detection
+              const contentHash = Buffer.from(raw).toString("base64").slice(0, 32);
+              allSkills.push({ name, path: file.path, raw, repoUrl: repo.html_url, contentHash });
+            } catch {}
+          }));
+        } catch {}
+      }));
+    }
+
+    console.log(`[GithubAutoSync][${traceId}] Total skills found: ${allSkills.length}`);
+
+    // 3. Diff: skip skills whose content hasn't changed
+    const existingSkills = await getSkillsByUser(userId);
+    const existingByName = new Map(existingSkills.map((s) => [s.name.toLowerCase(), s]));
+
+    const toImport: typeof allSkills = [];
+    let skipped = 0;
+    for (const skill of allSkills) {
+      const existing = existingByName.get(skill.name.toLowerCase());
+      if (existing) {
+        // Check if content changed by comparing sourceFile hash stored in description
+        // We store contentHash in the skill's description as a suffix: "...|hash:XXXX"
+        const storedHash = existing.description?.match(/\|hash:([A-Za-z0-9+/]{32})/)?.[1];
+        if (storedHash === skill.contentHash) {
+          skipped++;
+          continue; // No change
+        }
+      }
+      toImport.push(skill);
+    }
+
+    console.log(`[GithubAutoSync][${traceId}] To import: ${toImport.length}, skipped (no change): ${skipped}`);
+
+    // 4. Import changed/new skills
+    let created = 0;
+    let updated = 0;
+    const now = new Date();
+
+    for (const item of toImport) {
+      try {
+        const parsed = parseSkillMd(item.raw);
+        const allowedTools = (parsed.frontmatter["allowed-tools"] ?? "")
+          .split(/[,\s]+/).map((t) => t.trim()).filter(Boolean);
+        const tags = mapAllowedToolsToTags(allowedTools, parsed.description);
+        const descWithHash = `${parsed.description}|hash:${item.contentHash}`;
+        const existing = existingByName.get(item.name.toLowerCase());
+
+        if (existing) {
+          const versions = await getVersionsBySkill(existing.id);
+          const latestVersion = versions[0]?.version ?? "v1.0";
+          const nextVersion = bumpVersion(latestVersion);
+          const versionId = nanoid();
+          await createSkillVersion({
+            id: versionId,
+            skillId: existing.id,
+            version: nextVersion,
+            parentId: versions[0]?.id,
+            evolutionType: "fix",
+            triggerType: "manual",
+            qualityScore: 85,
+            successRate: 100,
+            codeContent: item.raw,
+            changeLog: `GitHub自動同期: ${item.repoUrl}/${item.path}`,
+            createdAt: now,
+          });
+          await updateSkill(existing.id, {
+            currentVersionId: versionId,
+            description: descWithHash,
+            tags: JSON.stringify(tags),
+            allowedTools: JSON.stringify(allowedTools),
+            sourceRepo: item.repoUrl,
+            sourceFile: item.path,
+            updatedAt: now,
+          });
+          updated++;
+        } else {
+          const skillId = nanoid();
+          const versionId = nanoid();
+          await createSkill({
+            id: skillId,
+            name: item.name,
+            description: descWithHash,
+            category: parsed.category,
+            authorId: userId,
+            isLocal: true,
+            isPublic: false,
+            tags: JSON.stringify(tags),
+            allowedTools: JSON.stringify(allowedTools),
+            sourceRepo: item.repoUrl,
+            sourceFile: item.path,
+            currentVersionId: versionId,
+            createdAt: now,
+            updatedAt: now,
+          });
+          await createSkillVersion({
+            id: versionId,
+            skillId,
+            version: "v1.0",
+            evolutionType: "create",
+            triggerType: "manual",
+            qualityScore: 80,
+            successRate: 100,
+            codeContent: item.raw,
+            changeLog: `GitHub自動同期インポート: ${item.repoUrl}/${item.path}`,
+            createdAt: now,
+          });
+          created++;
+        }
+      } catch (e) {
+        console.warn(`[GithubAutoSync][${traceId}] Failed to import ${item.name}:`, e);
+      }
+    }
+
+    // 5. Update sync log
+    await updateGithubSyncLog(logId, {
+      status: "success",
+      reposScanned: repos.length,
+      skillsFound: allSkills.length,
+      created,
+      updated,
+      skipped,
+      finishedAt: new Date(),
+    });
+
+    console.log(`[GithubAutoSync][${traceId}] Done: created=${created}, updated=${updated}, skipped=${skipped}`);
+    broadcastEvolutionEvent({ type: "github_sync_complete", userId, created, updated, skipped, timestamp: Date.now() });
+
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error(`[GithubAutoSync][${traceId}] Error:`, errMsg);
+    await updateGithubSyncLog(logId, {
+      status: "error",
+      errorMessage: errMsg,
+      finishedAt: new Date(),
+    });
+  }
 }
 
 function bumpVersion(version: string): string {

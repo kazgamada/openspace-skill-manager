@@ -173,3 +173,15 @@
 - [x] GithubFetchTab: エラー発生時に設定ページへのリンクを表示
 - [x] testIntegration: GitHubトークンの実際のAPI疏通テスト（/user エンドポイント）を実装
 - [x] UserSettings.tsx: 連携設定保存後に自動テストを実行してトークン有効性を即座に確認（testIntegration改善で対応）
+
+## GitHub全自動同期（1日1回差分インポート）
+- [x] importFromGithub: skillsの30件上限を撤廃しバッチ処理（500件以上対応）に変更
+- [x] DBにgithub_sync_logsテーブルを追加（同期履歴：実行日時・追加件数・更新件数・エラー）
+- [x] DBにuser_settingsのauto_sync_github列を追加（有効/無効フラグ）
+- [x] server: runGithubAutoSync バックエンド関数を実装（スキャン→差分検出→自動インポート）
+- [x] server: 差分検出ロジック（スキルのcontentHashで変更を検知）を実装
+- [x] server: 1日1回の自動同期スケジューラーをサーバー起動時に登録
+- [x] settings.setAutoSyncGithub tRPCエンドポイント（有効化/無効化）を追加
+- [x] settings.getGithubSyncLogs tRPCエンドポイント（同期履歴取得）を追加
+- [x] settings.triggerGithubSync tRPCエンドポイント（手動実行）を追加
+- [x] UserSettings.tsx: 自動同期ON/OFFトグルと同期履歴を表示するUIを追加

@@ -8,7 +8,6 @@
 import { useState } from "react";
 import { Redirect, useRoute } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
-import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -18,12 +17,13 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import {
-  AlertCircle, CheckCircle2, ChevronRight, FolderOpen,
-  Github, HardDrive, Link2, Loader2, Plus, RefreshCw,
+  AlertCircle, CheckCircle2, Clock, FolderOpen,
+  Github, HardDrive, Link2, Loader2, Play, Plus, RefreshCw,
   Settings, Trash2, Unlink, Zap,
 } from "lucide-react";
 
@@ -121,6 +121,7 @@ export default function UserSettings() {
 function IntegrationsPanel() {
   const [configuringKey, setConfiguringKey] = useState<ServiceKey | null>(null);
   const intQuery = trpc.settings.getIntegrations.useQuery();
+  const prefsQuery = trpc.settings.getPreferences.useQuery();
   const disconnectIntegration = trpc.settings.disconnectIntegration.useMutation({
     onSuccess: (_, vars) => {
       toast.success(`${vars.service} の連携を解除しました`);
@@ -136,6 +137,8 @@ function IntegrationsPanel() {
         acc[it.service] = { connected: it.connected, testedAt: it.testedAt ?? undefined, config: it.config as Record<string, string> };
         return acc;
       }, {});
+
+  const githubConnected = intMap["github"]?.connected ?? false;
 
   return (
     <>
@@ -235,6 +238,14 @@ function IntegrationsPanel() {
         })}
       </div>
 
+      {/* GitHub Auto Sync section (visible only when GitHub is connected) */}
+      {githubConnected && (
+        <GithubAutoSyncPanel
+          autoSyncEnabled={prefsQuery.data?.autoSyncGithub ?? false}
+          onPrefsRefetch={() => prefsQuery.refetch()}
+        />
+      )}
+
       {/* Configure Dialog */}
       {configuringKey && (
         <ConfigureDialog
@@ -245,6 +256,124 @@ function IntegrationsPanel() {
         />
       )}
     </>
+  );
+}
+
+// ─── GitHub Auto Sync Panel ───────────────────────────────────────────────────
+function GithubAutoSyncPanel({
+  autoSyncEnabled,
+  onPrefsRefetch,
+}: {
+  autoSyncEnabled: boolean;
+  onPrefsRefetch: () => void;
+}) {
+  const utils = trpc.useUtils();
+  const setAutoSync = trpc.settings.setAutoSyncGithub.useMutation({
+    onSuccess: (data) => {
+      toast.success(data.enabled ? "GitHub自動同期を有効にしました" : "GitHub自動同期を無効にしました");
+      onPrefsRefetch();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const triggerSync = trpc.settings.triggerGithubSync.useMutation({
+    onSuccess: () => {
+      toast.success("同期を開始しました。バックグラウンドで実行中です...");
+      // Refresh logs after a short delay
+      setTimeout(() => utils.settings.getGithubSyncLogs.invalidate(), 3000);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const logsQuery = trpc.settings.getGithubSyncLogs.useQuery({ limit: 5 });
+
+  return (
+    <Card className="card-glass border-primary/20">
+      <CardHeader className="pb-3 pt-4 px-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Github className="w-4 h-4 text-foreground" />
+            <CardTitle className="text-sm font-semibold">GitHub自動同期</CardTitle>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">
+              {autoSyncEnabled ? "有効（1日1回）" : "無効"}
+            </span>
+            <Switch
+              checked={autoSyncEnabled}
+              onCheckedChange={(v) => setAutoSync.mutate({ enabled: v })}
+              disabled={setAutoSync.isPending}
+            />
+          </div>
+        </div>
+        <CardDescription className="text-xs mt-1">
+          全リポジトリの <code className="text-[10px] bg-muted px-1 py-0.5 rounded">.claude/skills/*.md</code> を1日1回スキャンし、変更・追加のあるスキルのみマイスキルに自動インポートします
+        </CardDescription>
+      </CardHeader>
+
+      <CardContent className="px-4 pb-4 space-y-3">
+        {/* Manual trigger */}
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full h-8 text-xs gap-2"
+          onClick={() => triggerSync.mutate()}
+          disabled={triggerSync.isPending}
+        >
+          {triggerSync.isPending
+            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            : <Play className="w-3.5 h-3.5" />
+          }
+          今すぐ同期を実行
+        </Button>
+
+        {/* Sync logs */}
+        {logsQuery.data && logsQuery.data.length > 0 && (
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">同期履歴</p>
+            {logsQuery.data.map((log) => (
+              <div
+                key={log.id}
+                className={`flex items-center gap-2 p-2 rounded-lg text-xs border ${
+                  log.status === "success"
+                    ? "bg-emerald-500/5 border-emerald-500/20 text-emerald-400"
+                    : log.status === "error"
+                    ? "bg-destructive/5 border-destructive/20 text-destructive"
+                    : "bg-muted/30 border-border text-muted-foreground"
+                }`}
+              >
+                {log.status === "success" ? (
+                  <CheckCircle2 className="w-3 h-3 shrink-0" />
+                ) : log.status === "error" ? (
+                  <AlertCircle className="w-3 h-3 shrink-0" />
+                ) : (
+                  <Loader2 className="w-3 h-3 shrink-0 animate-spin" />
+                )}
+                <div className="flex-1 min-w-0">
+                  {log.status === "success" ? (
+                    <span>
+                      {log.reposScanned}リポジトリ スキャン済 · 新規{log.created}件 · 更新{log.updated}件 · スキップ{log.skipped}件
+                    </span>
+                  ) : log.status === "error" ? (
+                    <span className="truncate">{log.errorMessage ?? "エラーが発生しました"}</span>
+                  ) : (
+                    <span>同期中...</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 text-[10px] text-muted-foreground shrink-0">
+                  <Clock className="w-2.5 h-2.5" />
+                  {new Date(log.startedAt).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {logsQuery.data?.length === 0 && (
+          <p className="text-xs text-muted-foreground text-center py-2">
+            まだ同期履歴がありません。「今すぐ同期を実行」で初回同期を開始してください。
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -266,20 +395,22 @@ function ConfigureDialog({
   );
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<"success" | "error" | null>(null);
+  const [testMessage, setTestMessage] = useState<string>("");
 
   const saveIntegration = trpc.settings.saveIntegration.useMutation({
     onSuccess: () => { toast.success(`${svc.label} の連携を保存しました`); onSaved(); },
     onError: (e) => toast.error(e.message),
   });
   const testIntegration = trpc.settings.testIntegration.useMutation({
-    onMutate: () => { setTesting(true); setTestResult(null); },
+    onMutate: () => { setTesting(true); setTestResult(null); setTestMessage(""); },
     onSuccess: (data) => {
       setTesting(false);
       setTestResult(data.success ? "success" : "error");
+      setTestMessage((data as { message?: string }).message ?? "");
       if (data.success) toast.success("接続テスト成功");
       else toast.error("接続テスト失敗");
     },
-    onError: (e) => { setTesting(false); setTestResult("error"); toast.error(e.message); },
+    onError: (e) => { setTesting(false); setTestResult("error"); setTestMessage(e.message); toast.error(e.message); },
   });
 
   return (
@@ -316,14 +447,14 @@ function ConfigureDialog({
           )}
 
           {testResult && (
-            <div className={`flex items-center gap-2 p-2 rounded-lg text-xs ${
+            <div className={`flex items-start gap-2 p-2 rounded-lg text-xs ${
               testResult === "success" ? "bg-emerald-500/10 text-emerald-400" : "bg-destructive/10 text-destructive"
             }`}>
               {testResult === "success"
-                ? <CheckCircle2 className="w-3.5 h-3.5" />
-                : <AlertCircle className="w-3.5 h-3.5" />
+                ? <CheckCircle2 className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                : <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
               }
-              {testResult === "success" ? "接続テスト成功" : "接続テスト失敗"}
+              <span>{testMessage || (testResult === "success" ? "接続テスト成功" : "接続テスト失敗")}</span>
             </div>
           )}
         </div>

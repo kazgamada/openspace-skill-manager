@@ -182,6 +182,8 @@ export const userSettings = mysqlTable("user_settings", {
   // Integrations (JSON object with per-service config)
   // Shape: { claude?: { apiKey?, mcpPath?, connected, lastTestedAt }, github?: { token?, username?, connected, lastTestedAt }, googleDrive?: { folderId?, connected, lastTestedAt }, localFolder?: { path?, connected, lastTestedAt } }
   integrations: text("integrations"),
+  // GitHub auto sync settings
+  autoSyncGithub: boolean("autoSyncGithub").default(false).notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
@@ -214,3 +216,23 @@ export const userIntegrations = mysqlTable("user_integrations", {
 });
 export type UserIntegration = typeof userIntegrations.$inferSelect;
 export type InsertUserIntegration = typeof userIntegrations.$inferInsert;
+
+// ─────────────────────────────────────────────
+// GitHub Auto Sync Logs (per-user sync history)
+// ─────────────────────────────────────────────
+export const githubSyncLogs = mysqlTable("github_sync_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  status: mysqlEnum("status", ["running", "success", "error"]).notNull().default("running"),
+  reposScanned: int("reposScanned").default(0).notNull(),
+  skillsFound: int("skillsFound").default(0).notNull(),
+  created: int("created").default(0).notNull(),
+  updated: int("updated").default(0).notNull(),
+  skipped: int("skipped").default(0).notNull(),
+  errorMessage: text("errorMessage"),
+  startedAt: timestamp("startedAt").defaultNow().notNull(),
+  finishedAt: timestamp("finishedAt"),
+});
+
+export type GithubSyncLog = typeof githubSyncLogs.$inferSelect;
+export type InsertGithubSyncLog = typeof githubSyncLogs.$inferInsert;

@@ -16,8 +16,10 @@ import {
   InsertUserSettings,
   UserIntegration,
   InsertUserIntegration,
+  GithubSyncLog,
   communitySkills,
   executionLogs,
+  githubSyncLogs,
   healthThresholds,
   skillSources,
   skillVersions,
@@ -650,4 +652,33 @@ export async function deleteUserIntegration(id: number, userId: number): Promise
   const db = await getDb();
   if (!db) return;
   await db.delete(userIntegrations).where(and(eq(userIntegrations.id, id), eq(userIntegrations.userId, userId)));
+}
+
+// ─────────────────────────────────────────────
+// GitHub Sync Logs
+// ─────────────────────────────────────────────
+
+export async function createGithubSyncLog(userId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(githubSyncLogs).values({ userId, status: "running", startedAt: new Date() });
+  return (result[0] as { insertId: number }).insertId;
+}
+
+export async function updateGithubSyncLog(
+  id: number,
+  data: Partial<Pick<GithubSyncLog, "status" | "reposScanned" | "skillsFound" | "created" | "updated" | "skipped" | "errorMessage" | "finishedAt">>
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(githubSyncLogs).set(data).where(eq(githubSyncLogs.id, id));
+}
+
+export async function getGithubSyncLogs(userId: number, limit = 10): Promise<GithubSyncLog[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(githubSyncLogs)
+    .where(eq(githubSyncLogs.userId, userId))
+    .orderBy(githubSyncLogs.startedAt)
+    .limit(limit);
 }

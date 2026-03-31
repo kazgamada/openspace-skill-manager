@@ -135,3 +135,49 @@ setInterval(async () => {
     console.error("[AutoSync] Scheduled sync error:", e);
   }
 }, 6 * 60 * 60 * 1000); // 6 hours
+
+// ─── 1日1回 GitHub 個人自動同期スケジューラー ─────────────────────────────────────────────
+setInterval(async () => {
+  try {
+    const { getDb } = await import("../db");
+    const { upsertUserSettings, getUserSettingsByUserId } = await import("../db");
+    const db = await getDb();
+    if (!db) return;
+
+    // Find all users with autoSyncGithub = true
+    const { users, userSettings } = await import("../../drizzle/schema");
+    const { eq } = await import("drizzle-orm");
+    const rows = await db.select({
+      userId: userSettings.userId,
+      integrations: userSettings.integrations,
+    }).from(userSettings).where(eq(userSettings.autoSyncGithub, true));
+
+    if (rows.length === 0) return;
+    console.log(`[DailyGithubSync] Running for ${rows.length} user(s)`);
+
+    const { createGithubSyncLog } = await import("../db");
+    // Dynamically import runGithubAutoSync via appRouter trigger pattern
+    // We call triggerGithubSync procedure for each user
+    for (const row of rows) {
+      try {
+        let token: string | undefined;
+        if (row.integrations) {
+          const integrations = JSON.parse(row.integrations) as Record<string, Record<string, unknown>>;
+          token = integrations.github?.token as string | undefined;
+        }
+        if (!token) continue;
+
+        const logId = await createGithubSyncLog(row.userId);
+        // Import and run the sync function
+        const { runGithubAutoSyncExported } = await import("../github-autosync");
+        runGithubAutoSyncExported(row.userId, token, logId).catch((e: unknown) =>
+          console.error(`[DailyGithubSync] Error for user ${row.userId}:`, e)
+        );
+      } catch (e) {
+        console.error(`[DailyGithubSync] Setup error for user ${row.userId}:`, e);
+      }
+    }
+  } catch (e) {
+    console.error("[DailyGithubSync] Scheduler error:", e);
+  }
+}, 24 * 60 * 60 * 1000); // 24 hours
