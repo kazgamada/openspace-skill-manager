@@ -55,7 +55,8 @@ function QualityBar({ score }: { score: number | null }) {
             <div className="border-t border-border/50 pt-1.5 space-y-1">
               <p className="text-[10px] text-muted-foreground font-medium">スコアの算出方法</p>
               <div className="text-[10px] text-muted-foreground space-y-0.5">
-                <p>· <span className="text-foreground/80">クロール取得時</span>: stars/forks/freshness複合ランク × 5</p>
+                <p>· <span className="text-foreground/80">クロール取得時</span>: クロールランク × 5（上限100）</p>
+                <p className="text-[9px] text-muted-foreground/70 pl-2 leading-relaxed">ランク = ln(stars+1)×3 + ln(forks+1)×1.5 + freshness×2<br/>└ freshness: 30日以内=1.0 / 90日=0.7 / 1年=0.3 / 1年超=0.1</p>
                 <p>· <span className="text-foreground/80">手動修復時</span>: +5pt（自動修復は +10pt）</p>
                 <p>· <span className="text-foreground/80">進化提案適用時</span>: LLM評価に基づく進化スコア</p>
               </div>

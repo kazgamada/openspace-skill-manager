@@ -26,12 +26,15 @@ function Router() {
       {/* 設定（v4: 3サブページ） */}
       <Route path="/settings" component={UserSettings} />
       <Route path="/settings/account" component={UserSettings} />
+      <Route path="/settings/integrations" component={UserSettings} />
+      <Route path="/settings/integrations/:svc" component={UserSettings} />
       <Route path="/settings/wizard" component={UserSettings} />
+      <Route path="/settings/wizard/:step" component={UserSettings} />
       <Route path="/settings/manual" component={UserSettings} />
       {/* Agent連携 */}
       <Route path="/claude" component={ClaudeIntegration} />
       <Route path="/claude/:tab" component={ClaudeIntegration} />
-      {/* 管者パネル（v4: 3サブページ） */}
+      {/* 管理者パネル（v4: 3サブページ） */}
       <Route path="/admin" component={AdminSettings} />
       <Route path="/admin/users" component={AdminSettings} />
       <Route path="/admin/plans" component={AdminSettings} />

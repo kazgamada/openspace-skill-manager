@@ -313,3 +313,22 @@
 - [x] App.tsxに /claude/:tab ルートを追加（ClaudeIntegration.tsxを登録）
 - [x] UserSettings手動設定: GitHub取得カードを削除（別途実装済みのため）
 - [x] UserSettings手動設定: 欙6項目のpathを /claude/:tab の正しいタブ名に修正（/claude/merge, /claude/diff, /claude/tags, /claude/single, /claude/smart, /claude/mcp）
+
+## 品質スコアツールチップの計算式説明を正確化
+
+- [ ] MySkills.tsx: ScoreTooltipContentのクロール計算式を実際のコードに基づく正確な説明に更新
+- [ ] Community.tsx: QualityBarツールチップのクロール計算式を同様に更新
+
+## 設定ページ構造の再設計
+
+- [ ] 初期設定ウィザードのタブを廃止し、第2カラム縦メニュー（GitHub連携・Claude Code連携）に変更
+- [ ] 外部サービス連携セクション（GitHub/Claude Code）を手動設定から初期設定の各サブページに移動
+- [ ] 手動設定から外部サービス連携セクションを削除
+- [ ] UserSettings全体を3カラム構造（DashboardLayout左サイドバー→第2カラム縦メニュー→コンテンツ）に変更
+
+## 設定ページ第2カラム縦メニュー拡張
+
+- [x] 初期設定の第2カラム縦メニューに外部サービス連携4項目（GitHub連携・Claude Code連携・Google Drive連携・ローカルフォルダー）を追加
+- [x] 外部サービス連携の下にウィザード6項目（同期スケジュール・修復設定・進化提案・監視先リスト・回遊設定・通知設定）を追加
+- [x] 手動設定から外部サービス連携セクションを削除
+- [x] UserSettings全体を3カラム構造（DashboardLayout左サイドバー→第2カラム縦メニュー→コンテンツ）に変更

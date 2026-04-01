@@ -256,10 +256,10 @@ function MenuItemWithManual({
 // v4設計方针: ダッシュボード・マイスキル・スキル広場・設定・管理者パネル
 // Agent連携・ Codeモニター・スキル系譜(サイドバー)は廃止
 
-// 設定サブメニュー（v4: ユーザーアカウント・初期設定ウィザード・手動設定）
+// 設定サブメニュー（v7: ユーザーアカウント・初期設定・手動設定）
 const userSettingsSubItems = [
   { icon: UserCircle, label: "ユーザーアカウント", path: "/settings/account" },
-  { icon: Wand2,      label: "初期設定ウィザード", path: "/settings/wizard" },
+  { icon: Wand2,      label: "初期設定",           path: "/settings/integrations/github" },
   { icon: Cpu,        label: "手動設定",           path: "/settings/manual" },
 ];
 
@@ -492,14 +492,14 @@ function DashboardLayoutContent({
       document.body.style.userSelect = "";
     };
   }, [isResizing, setSidebarWidth]);
-
-  // アクティブラベル（モバイルヘッダー用）(v4: 5本メニュー)
+  // アクティブラベル（モバイルヘッダー用） (v7: 5本メニュー)
   const allPaths = [
     { path: "/dashboard", label: "ダッシュボード" },
     { path: "/skills", label: "マイスキル" },
     { path: "/community", label: "スキル広場" },
     { path: "/settings/account", label: "ユーザーアカウント" },
-    { path: "/settings/wizard", label: "初期設定ウィザード" },
+    { path: "/settings/integrations", label: "初期設定" },
+    { path: "/settings/wizard", label: "初期設定" },
     { path: "/settings/manual", label: "手動設定" },
     { path: "/settings", label: "設定" },
     { path: "/admin/users", label: "ユーザー・ロール管理" },
