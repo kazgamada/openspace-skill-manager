@@ -99,16 +99,34 @@ export async function updateUserRole(userId: number, role: "user" | "admin") {
 // ─────────────────────────────────────────────
 // Skills
 // ─────────────────────────────────────────────
-export async function getSkillsByUser(authorId: number): Promise<Skill[]> {
-  const db = await getDb();
-  if (!db) return [];
-  return db.select().from(skills).where(eq(skills.authorId, authorId)).orderBy(desc(skills.updatedAt));
-}
+export type SkillWithScore = Skill & { qualityScore: number | null };
 
-export async function getAllSkills(): Promise<Skill[]> {
+export async function getSkillsByUser(authorId: number): Promise<SkillWithScore[]> {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(skills).orderBy(desc(skills.updatedAt));
+  const rows = await db
+    .select({
+      skill: skills,
+      qualityScore: skillVersions.qualityScore,
+    })
+    .from(skills)
+    .leftJoin(skillVersions, eq(skillVersions.id, skills.currentVersionId))
+    .where(eq(skills.authorId, authorId))
+    .orderBy(desc(skills.updatedAt));
+  return rows.map((r) => ({ ...r.skill, qualityScore: r.qualityScore ?? null }));
+}
+export async function getAllSkills(): Promise<SkillWithScore[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({
+      skill: skills,
+      qualityScore: skillVersions.qualityScore,
+    })
+    .from(skills)
+    .leftJoin(skillVersions, eq(skillVersions.id, skills.currentVersionId))
+    .orderBy(desc(skills.updatedAt));
+  return rows.map((r) => ({ ...r.skill, qualityScore: r.qualityScore ?? null }));
 }
 
 export async function getSkillById(id: string): Promise<Skill | undefined> {

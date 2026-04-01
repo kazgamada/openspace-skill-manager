@@ -294,3 +294,9 @@
 
 - [x] UserSettings.tsx: DashboardLayoutを使用して左メインメニューを常時表示（設定ページ内でDashboardLayoutを独自実装しているため消えている）
 - [x] AdminSettings.tsx: 同様に確認（すでにDashboardLayoutを正しく使用済みのため修正不要）
+
+## スコアバーグラフ追加
+
+- [x] SkillScoreBar共通コンポーネントを作成（スコア値をバーグラフで視覚化）
+- [x] MySkills.tsx: カード・リスト・グリッド全ビューにスコアバーを追加
+- [x] Community.tsx: スキル広場のスキルカード全ビューにスコアバーを追加（既存実装済み）

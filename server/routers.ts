@@ -46,6 +46,7 @@ import {
   updateGithubSyncLog,
   getGithubSyncLogs,
   getDb,
+  type SkillWithScore,
 } from "./db";
 import { syncSkillSource } from "./github-sync";
 import { runGithubCrawl, loadCrawlOptionsFromDB } from "./github-crawl";

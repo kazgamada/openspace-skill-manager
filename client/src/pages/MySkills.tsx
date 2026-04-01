@@ -141,6 +141,32 @@ interface SkillItem {
   id: string; name: string; description: string | null; category: string | null;
   tags: string | null; isPublic: boolean; updatedAt: Date; createdAt?: Date | null;
   sourceRepo?: string | null; badge?: string | null;
+  qualityScore?: number | null;
+}
+
+// ─── スコアバー共通コンポーネント ──────────────────────────
+function SkillScoreBar({ score, compact = false }: { score?: number | null; compact?: boolean }) {
+  const val = score ?? 0;
+  const hasScore = score !== null && score !== undefined && score > 0;
+  const color = val >= 80 ? "bg-emerald-400" : val >= 60 ? "bg-amber-400" : val > 0 ? "bg-rose-400" : "bg-muted/40";
+  if (compact) {
+    return (
+      <div className="flex items-center gap-1.5 w-full">
+        <div className="flex-1 h-1 rounded-full bg-muted/30 overflow-hidden">
+          <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${val}%` }} />
+        </div>
+        <span className="text-[9px] font-mono text-muted-foreground w-5 text-right shrink-0">{hasScore ? val.toFixed(0) : "–"}</span>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex-1 h-1.5 rounded-full bg-muted/30 overflow-hidden">
+        <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${val}%` }} />
+      </div>
+      <span className="text-[10px] font-mono text-muted-foreground w-7 text-right shrink-0">{hasScore ? `${val.toFixed(0)}` : "–"}</span>
+    </div>
+  );
 }
 
 function MySkillCard({
@@ -180,6 +206,7 @@ function MySkillCard({
       <div className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${sel} bg-card hover:bg-muted/20 transition-colors cursor-pointer group`} onClick={() => onSelect(skill.id)}>
         <div className="w-6 h-6 rounded bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0"><Zap className="w-3 h-3 text-primary" /></div>
         <span className="text-xs font-medium truncate flex-1">{skill.name}</span>
+        <div className="w-20 shrink-0"><SkillScoreBar score={skill.qualityScore} compact /></div>
         {isNew && !skill.badge && <Badge className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 h-4 px-1.5 shrink-0">NEW</Badge>}
         <SkillStatusBadge badge={skill.badge} />
         {menu}
@@ -200,6 +227,7 @@ function MySkillCard({
           </div>
           <p className="text-xs text-muted-foreground truncate">{shortDesc}</p>
         </div>
+        <div className="w-24 shrink-0"><SkillScoreBar score={skill.qualityScore} /></div>
         <div className="flex items-center gap-2 shrink-0 text-[10px] text-muted-foreground">
           {skill.isPublic ? <Globe className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
           <Clock className="w-3 h-3" />{formatDistanceToNow(new Date(skill.updatedAt), { addSuffix: true, locale: ja })}
@@ -217,10 +245,11 @@ function MySkillCard({
           {menu}
         </div>
         <p className="text-xs font-semibold truncate mb-1">{skill.name}</p>
-        <div className="flex items-center gap-1 flex-wrap">
+        <div className="flex items-center gap-1 flex-wrap mb-1.5">
           {isNew && !skill.badge && <Badge className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 h-4 px-1">NEW</Badge>}
           <SkillStatusBadge badge={skill.badge} />
         </div>
+        <SkillScoreBar score={skill.qualityScore} compact />
         <p className="text-[10px] text-muted-foreground mt-1">{formatDistanceToNow(new Date(skill.updatedAt), { addSuffix: true, locale: ja })}</p>
       </div>
     );
@@ -250,9 +279,10 @@ function MySkillCard({
           </div>
           {menu}
         </div>
-        <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{shortDesc}</p>
+        <p className="text-xs text-muted-foreground line-clamp-2 mb-2">{shortDesc}</p>
+        <div className="mb-2"><SkillScoreBar score={skill.qualityScore} /></div>
         {tags.length > 0 && (
-          <div className="flex flex-wrap gap-1 mb-3">
+          <div className="flex flex-wrap gap-1 mb-2">
             {tags.slice(0, 3).map((tag) => <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded bg-muted/50 text-muted-foreground">#{tag}</span>)}
             {tags.length > 3 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted/50 text-muted-foreground">+{tags.length - 3}</span>}
           </div>
