@@ -18,7 +18,18 @@ import {
   Sparkles,
   ChevronRight,
   Globe,
+  Dna,
+  X,
+  Eye,
+  ArrowUpCircle,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
@@ -260,6 +271,251 @@ function ProjectMonitorPanel() {
   );
 }
 
+// ─── スキル進化提案カード ────────────────────────────────────────────
+
+type EvolutionProposal = {
+  id: string;
+  mySkillId: string | null;
+  mySkillName: string;
+  publicSkillIds: string[];
+  publicSkillNames: string[];
+  reason: string;
+  evolutionScore: number;
+  status: string;
+  createdAt: Date;
+};
+
+function EvolutionProposalCard() {
+  const [, setLocation] = useLocation();
+  const [previewProposal, setPreviewProposal] = useState<(EvolutionProposal & { mergedContent?: string }) | null>(null);
+  const utils = trpc.useUtils();
+
+  const proposalsQuery = trpc.evolution.getProposals.useQuery({ status: "pending" });
+
+  const detectMutation = trpc.evolution.detectProposals.useMutation({
+    onSuccess: (data) => {
+      if (data.created > 0) {
+        toast.success(`✨ ${data.created} 件の進化提案を検出しました`);
+        utils.evolution.getProposals.invalidate();
+      } else {
+        toast.info("現在新たな進化提案はありません");
+      }
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const applyMutation = trpc.evolution.applyProposal.useMutation({
+    onSuccess: (data) => {
+      toast.success("✅ スキルを進化させました！");
+      setPreviewProposal(null);
+      utils.evolution.getProposals.invalidate();
+      if (data.mySkillId) setLocation(`/skills/${data.mySkillId}`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const dismissMutation = trpc.evolution.dismissProposal.useMutation({
+    onSuccess: () => {
+      utils.evolution.getProposals.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const detailQuery = trpc.evolution.getProposalDetail.useQuery(
+    { proposalId: previewProposal?.id ?? "" },
+    { enabled: !!previewProposal?.id && !previewProposal.mergedContent }
+  );
+
+  // 詳細取得後にpreviewProposalを更新
+  useEffect(() => {
+    const detail = detailQuery.data as Record<string, unknown> | undefined;
+    if (detail && previewProposal && !previewProposal.mergedContent) {
+      setPreviewProposal((prev) => prev ? { ...prev, mergedContent: detail.mergedContent as string } : null);
+    }
+  }, [detailQuery.data]);
+
+  const proposals = proposalsQuery.data ?? [];
+
+  if (proposals.length === 0 && !proposalsQuery.isLoading) {
+    return (
+      <Card className="bg-card border-border">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <Dna className="w-4 h-4 text-purple-400" />
+            スキル進化提案
+            <Badge variant="outline" className="text-[9px] border-purple-400/30 text-purple-400/70 ml-auto">AI合成</Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col items-center justify-center py-6 text-center gap-3">
+            <Dna className="w-10 h-10 text-muted-foreground/20" />
+            <div>
+              <p className="text-sm text-muted-foreground">進化提案はまだありません</p>
+              <p className="text-xs text-muted-foreground/60 mt-1">公開スキルとマイスキルを比較して提案を生成します</p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => detectMutation.mutate()}
+              disabled={detectMutation.isPending}
+              className="gap-1.5 text-xs border-purple-400/30 text-purple-400 hover:bg-purple-400/10"
+            >
+              <Sparkles className={`w-3.5 h-3.5 ${detectMutation.isPending ? "animate-spin" : ""}`} />
+              {detectMutation.isPending ? "解析中...—LLM合成に数分かかる場合があります" : "進化提案を検出"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <>
+      <Card className="bg-card border-border">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <Dna className="w-4 h-4 text-purple-400" />
+            スキル進化提案
+            <Badge className="text-[9px] bg-purple-500/20 text-purple-300 border-purple-500/30 ml-1">
+              {proposals.length}
+            </Badge>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => detectMutation.mutate()}
+              disabled={detectMutation.isPending}
+              className="ml-auto h-6 px-2 text-[10px] text-muted-foreground hover:text-purple-400"
+            >
+              <RefreshCw className={`w-3 h-3 mr-1 ${detectMutation.isPending ? "animate-spin" : ""}`} />
+              再検出
+            </Button>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2.5">
+          {proposalsQuery.isLoading ? (
+            <div className="space-y-2">
+              {[...Array(2)].map((_, i) => <div key={i} className="h-20 rounded-lg shimmer" />)}
+            </div>
+          ) : (
+            proposals.slice(0, 3).map((proposal) => (
+              <div
+                key={proposal.id}
+                className="p-3 rounded-xl border border-purple-500/20 bg-purple-500/5 space-y-2"
+              >
+                {/* スキル名 + スコア */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <ArrowUpCircle className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                      <span className="text-xs font-semibold text-purple-200 truncate">{proposal.mySkillName}</span>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2">{proposal.reason}</p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className="text-[10px] font-bold text-purple-300">{proposal.evolutionScore}</span>
+                    <span className="text-[9px] text-muted-foreground">/100</span>
+                  </div>
+                </div>
+                {/* 合成元スキル */}
+                <div className="flex flex-wrap gap-1">
+                  {proposal.publicSkillNames.slice(0, 3).map((name, i) => (
+                    <span key={i} className="px-1.5 py-0.5 rounded text-[9px] bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
+                      + {name.length > 20 ? name.slice(0, 20) + "..." : name}
+                    </span>
+                  ))}
+                </div>
+                {/* アクションボタン */}
+                <div className="flex items-center gap-1.5 pt-0.5">
+                  <Button
+                    size="sm"
+                    onClick={() => applyMutation.mutate({ proposalId: proposal.id })}
+                    disabled={applyMutation.isPending}
+                    className="h-6 px-3 text-[10px] bg-purple-600 hover:bg-purple-500 text-white gap-1"
+                  >
+                    <Zap className="w-3 h-3" />
+                    ワンクリックで進化
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setPreviewProposal(proposal)}
+                    className="h-6 px-2 text-[10px] text-muted-foreground hover:text-foreground gap-1"
+                  >
+                    <Eye className="w-3 h-3" />
+                    プレビュー
+                  </Button>
+                  <button
+                    onClick={() => dismissMutation.mutate({ proposalId: proposal.id })}
+                    className="ml-auto text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
+
+      {/* プレビューダイアログ */}
+      <Dialog open={!!previewProposal} onOpenChange={(open) => !open && setPreviewProposal(null)}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Dna className="w-5 h-5 text-purple-400" />
+              進化プレビュー: {previewProposal?.mySkillName}
+            </DialogTitle>
+            <DialogDescription>
+              {previewProposal?.reason}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* 合成元 */}
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-2">参照公開スキル</p>
+              <div className="flex flex-wrap gap-1.5">
+                {previewProposal?.publicSkillNames.map((name, i) => (
+                  <span key={i} className="px-2 py-1 rounded-full text-xs bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
+                    {name}
+                  </span>
+                ))}
+              </div>
+            </div>
+            {/* 合成後コンテンツ */}
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-2">進化後のSKILL.md</p>
+              {detailQuery.isLoading ? (
+                <div className="h-40 rounded-lg shimmer" />
+              ) : (
+                <pre className="text-xs bg-muted/30 rounded-lg p-4 overflow-x-auto whitespace-pre-wrap border border-border max-h-60 overflow-y-auto">
+                  {previewProposal?.mergedContent ?? "読み込み中..."}
+                </pre>
+              )}
+            </div>
+            {/* 適用ボタン */}
+            <div className="flex gap-2 pt-2">
+              <Button
+                onClick={() => previewProposal && applyMutation.mutate({ proposalId: previewProposal.id })}
+                disabled={applyMutation.isPending}
+                className="gap-2 bg-purple-600 hover:bg-purple-500"
+              >
+                <Zap className="w-4 h-4" />
+                {applyMutation.isPending ? "適用中..." : "スキルに適用する"}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setPreviewProposal(null)}
+              >
+                キャンセル
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 export default function Dashboard() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
@@ -435,8 +691,8 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          {/* プロジェクトモニター推薦パネル */}
-          <ProjectMonitorPanel />
+          {/* スキル進化提案カード */}
+          <EvolutionProposalCard />
 
           {/* Timeline */}
           <Card className="bg-card border-border">

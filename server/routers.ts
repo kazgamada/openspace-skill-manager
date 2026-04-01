@@ -50,6 +50,7 @@ import {
 import { syncSkillSource } from "./github-sync";
 import { runGithubCrawl } from "./github-crawl";
 import { detectPatterns, generateSkillSuggestions, generateSessionId, generateSuggestionId } from "./claude-monitor";
+import { detectAndSaveEvolutionProposals, findEvolutionCandidates } from "./skill-evolution";
 import type { ActivityEntry } from "./claude-monitor";
 import { invokeLLM } from "./_core/llm";
 import { broadcastEvolutionEvent } from "./_core/index";
@@ -2136,6 +2137,155 @@ const monitorRouter = router({
 });
 
 // ─────────────────────────────────────────────
+// Evolution Router (スキル進化提案)
+// ─────────────────────────────────────────────
+const evolutionRouter = router({
+  // 進化提案を自動生成（バックグラウンド実行）
+  detectProposals: protectedProcedure
+    .mutation(async ({ ctx }) => {
+      const count = await detectAndSaveEvolutionProposals(ctx.user.id);
+      return { created: count };
+    }),
+
+  // 未処理の進化提案一覧を取得
+  getProposals: protectedProcedure
+    .input(z.object({ status: z.enum(["pending", "applied", "dismissed"]).optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      const pool = (db as any).$client;
+      const status = input?.status ?? "pending";
+      const [rows] = await pool.execute(
+        `SELECT id, mySkillId, mySkillName, publicSkillIds, publicSkillNames,
+                reason, evolutionScore, status, createdAt
+         FROM skill_evolution_proposals
+         WHERE userId = ? AND status = ?
+         ORDER BY evolutionScore DESC, createdAt DESC
+         LIMIT 20`,
+        [ctx.user.id, status]
+      );
+      return (rows as Array<{
+        id: string; mySkillId: string | null; mySkillName: string;
+        publicSkillIds: string; publicSkillNames: string;
+        reason: string; evolutionScore: number; status: string; createdAt: Date;
+      }>).map((r) => ({
+        ...r,
+        publicSkillIds: JSON.parse(r.publicSkillIds) as string[],
+        publicSkillNames: JSON.parse(r.publicSkillNames) as string[],
+      }));
+    }),
+
+  // 進化提案のプレビュー（合成後コンテンツを取得）
+  getProposalDetail: protectedProcedure
+    .input(z.object({ proposalId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      const pool = (db as any).$client;
+      const [rows] = await pool.execute(
+        `SELECT * FROM skill_evolution_proposals WHERE id = ? AND userId = ?`,
+        [input.proposalId, ctx.user.id]
+      );
+      const row = (rows as Array<Record<string, unknown>>)[0];
+      if (!row) throw new TRPCError({ code: "NOT_FOUND" });
+      return {
+        ...row,
+        publicSkillIds: JSON.parse(row.publicSkillIds as string) as string[],
+        publicSkillNames: JSON.parse(row.publicSkillNames as string) as string[],
+      };
+    }),
+
+  // 進化提案をマイスキルに適用（ワンクリック合成）
+  applyProposal: protectedProcedure
+    .input(z.object({ proposalId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      const pool = (db as any).$client;
+
+      // 提案を取得
+      const [rows] = await pool.execute(
+        `SELECT * FROM skill_evolution_proposals WHERE id = ? AND userId = ? AND status = 'pending'`,
+        [input.proposalId, ctx.user.id]
+      );
+      const proposal = (rows as Array<Record<string, unknown>>)[0];
+      if (!proposal) throw new TRPCError({ code: "NOT_FOUND", message: "提案が見つかりません" });
+
+      const mySkillId = proposal.mySkillId as string | null;
+      const mergedContent = proposal.mergedContent as string;
+      const mySkillName = proposal.mySkillName as string;
+
+      if (mySkillId) {
+        // 既存スキルに新バージョンとして追加
+        const currentSkill = await getSkillById(mySkillId);
+        if (currentSkill) {
+          const newVersionId = nanoid();
+          const currentVersion = currentSkill.currentVersionId
+            ? (await getVersionById(currentSkill.currentVersionId))?.version ?? "v1.0"
+            : "v1.0";
+          const newVersion = bumpVersion(currentVersion);
+          await createSkillVersion({
+            id: newVersionId,
+            skillId: mySkillId,
+            version: newVersion,
+            parentId: currentSkill.currentVersionId ?? undefined,
+            evolutionType: "derive",
+            triggerType: "analysis",
+            qualityScore: Math.min(1, (proposal.evolutionScore as number) / 100),
+            codeContent: mergedContent,
+            changeLog: `進化提案を適用: ${proposal.reason as string}`,
+          });
+          await updateSkill(mySkillId, { currentVersionId: newVersionId });
+        }
+      } else {
+        // 新規スキルとして作成
+        const newSkillId = nanoid();
+        const newVersionId = nanoid();
+        await createSkill({
+          id: newSkillId,
+          name: `${mySkillName}（進化版）`,
+          description: `進化提案から自動生成: ${proposal.reason as string}`,
+          authorId: ctx.user.id,
+          isLocal: true,
+          isPublic: false,
+          currentVersionId: newVersionId,
+        });
+        await createSkillVersion({
+          id: newVersionId,
+          skillId: newSkillId,
+          version: "v1.0",
+          evolutionType: "derive",
+          triggerType: "analysis",
+          qualityScore: Math.min(1, (proposal.evolutionScore as number) / 100),
+          codeContent: mergedContent,
+          changeLog: `進化提案から自動生成`,
+        });
+      }
+
+      // 提案をappliedに更新
+      await pool.execute(
+        `UPDATE skill_evolution_proposals SET status = 'applied', updatedAt = NOW() WHERE id = ?`,
+        [input.proposalId]
+      );
+
+      // WebSocket通知
+      broadcastEvolutionEvent({ type: "skill_evolved", userId: ctx.user.id, skillName: mySkillName });
+
+      return { success: true, mySkillId };
+    }),
+
+  // 進化提案を却下
+  dismissProposal: protectedProcedure
+    .input(z.object({ proposalId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      const pool = (db as any).$client;
+      await pool.execute(
+        `UPDATE skill_evolution_proposals SET status = 'dismissed', updatedAt = NOW() WHERE id = ? AND userId = ?`,
+        [input.proposalId, ctx.user.id]
+      );
+      return { success: true };
+    }),
+});
+
+// ─────────────────────────────────────────────
 // App Router
 // ─────────────────────────────────────────────
 export const appRouter = router({
@@ -2157,6 +2307,7 @@ export const appRouter = router({
   claude: claudeRouter,
   settings: settingsRouter,
   monitor: monitorRouter,
+  evolution: evolutionRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -71,6 +71,13 @@
       "when": 1774970424555,
       "tag": "0009_fearless_otto_octavius",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1775001972768,
+      "tag": "0010_real_silhouette",
+      "breakpoints": true
     }
   ]
 }

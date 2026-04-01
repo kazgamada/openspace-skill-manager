@@ -228,3 +228,15 @@
 - [x] サイドバーに「Codeモニター」メニューを追加（/monitorルート）
 - [x] server/claude-monitor.test.ts: detectPatternsのユニットテスト（13テスト）追加
 - [x] Claude Code用のMCPサーバー設定ファイルを生成するUI（設定 → 連携 → Claude Code連携済みの場合に表示）
+
+## スキル進化提案機能（ワンクリック合成）
+- [x] DB: skill_evolution_proposals テーブルを追加（userId・mySkillId・publicSkillIds・mergedContent・reason・status・createdAt）
+- [x] server/skill-evolution.ts: マイスキルと公開スキルの類似度スコア計算・合成ロジックを実装
+- [x] evolution.detectProposals tRPC: バックグラウンドで進化提案を自動生成するエンドポイント
+- [x] evolution.getProposals tRPC: ダッシュボード向けに未処理の提案一覧を取得
+- [x] evolution.applyProposal tRPC: ワンクリックで合成スキルをマイスキルに取り込む（新バージョンとして登録）
+- [x] evolution.dismissProposal tRPC: 提案を却下する
+- [x] evolution.getProposalDetail tRPC: 合成後コンテンツを取得（プレビュー用）
+- [x] ダッシュボード: EvolutionProposalCard コンポーネント（合成元スキル表示・プレビューダイアログ・ワンクリック適用ボタン）
+- [x] ダッシュボード: 進化提案カードをグリッド中央カラムに追加（プロジェクトモニターパネルを置換）
+- [x] server/skill-evolution.test.ts: calcSimilarityScoreのユニットテスト 9件追加（74テスト全通過）

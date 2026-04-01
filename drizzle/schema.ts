@@ -291,3 +291,30 @@ export const skillSuggestions = mysqlTable("skill_suggestions", {
 });
 export type SkillSuggestion = typeof skillSuggestions.$inferSelect;
 export type InsertSkillSuggestion = typeof skillSuggestions.$inferInsert;
+
+// ─────────────────────────────────────────────
+// Skill Evolution Proposals (スキル進化提案)
+// ─────────────────────────────────────────────
+export const skillEvolutionProposals = mysqlTable("skill_evolution_proposals", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  // 進化対象のマイスキル
+  mySkillId: varchar("mySkillId", { length: 64 }).references(() => skills.id, { onDelete: "cascade" }),
+  mySkillName: varchar("mySkillName", { length: 255 }).notNull(),
+  // 合成に使用する公開スキルのID配列（JSON）
+  publicSkillIds: text("publicSkillIds").notNull(), // JSON: ["id1","id2"]
+  // 合成に使用する公開スキルの名前配列（JSON）
+  publicSkillNames: text("publicSkillNames").notNull(), // JSON: ["name1","name2"]
+  // 合成後のスキルコンテンツ（SKILL.md形式）
+  mergedContent: text("mergedContent").notNull(),
+  // 進化の理由（何が強化されるか）
+  reason: text("reason").notNull(),
+  // 進化スコア（0-100）
+  evolutionScore: int("evolutionScore").default(0).notNull(),
+  // ステータス（pending | applied | dismissed）
+  status: mysqlEnum("status", ["pending", "applied", "dismissed"]).default("pending").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type SkillEvolutionProposal = typeof skillEvolutionProposals.$inferSelect;
+export type InsertSkillEvolutionProposal = typeof skillEvolutionProposals.$inferInsert;
