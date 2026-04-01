@@ -58,6 +58,8 @@ import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
+import { desc, eq, inArray } from "drizzle-orm";
+import { communitySkills, githubSyncLogs, skillSources, skillVersions, skills } from "../drizzle/schema";
 
 // ─────────────────────────────────────────────
 // Admin guard middleware
@@ -711,7 +713,67 @@ const dashboardRouter = router({
   stats: protectedProcedure.query(async ({ ctx }) => {
     const isAdmin = ctx.user.role === "admin";
     const authorId = isAdmin ? undefined : ctx.user.id;
-    return getDashboardStats(authorId);
+    const base = await getDashboardStats(authorId);
+    // 追加統計: GitHub同期ログ・ソース数・コミュニティスキル数・品質スコア
+    const db = await getDb();
+    let githubLastSync: Date | null = null;
+    let githubSyncStatus: string = "never";
+    let totalSources = 0;
+    let totalCommunitySkills = 0;
+    let avgQualityScore = 0;
+    let pendingEvolutions = 0;
+    let mySkillsWithBadge: { new: number; repaired: number; derived: number } = { new: 0, repaired: 0, derived: 0 };
+    if (db) {
+      // GitHub同期最新ログ
+      const syncLogs = await db.select().from(githubSyncLogs)
+        .where(eq(githubSyncLogs.userId, ctx.user.id))
+        .orderBy(desc(githubSyncLogs.startedAt))
+        .limit(1);
+      if (syncLogs.length > 0) {
+        githubLastSync = syncLogs[0].finishedAt ?? syncLogs[0].startedAt;
+        githubSyncStatus = syncLogs[0].status;
+      }
+      // スキルソース数（グローバル）
+      const sources = await db.select().from(skillSources);
+      totalSources = sources.length;
+      // コミュニティスキル数
+      const commSkills = await db.select().from(communitySkills);
+      totalCommunitySkills = commSkills.length;
+      // 平均品質スコア
+      const userSkills = await db.select().from(skills).where(eq(skills.authorId, ctx.user.id));
+      if (userSkills.length > 0) {
+        const versionIds = userSkills.map(s => s.currentVersionId).filter(Boolean) as string[];
+        if (versionIds.length > 0) {
+          const versions = await db.select().from(skillVersions)
+            .where(inArray(skillVersions.id, versionIds));
+          const scores = versions.map(v => v.qualityScore ?? 0).filter(s => s > 0);
+          avgQualityScore = scores.length > 0 ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 100) : 0;
+        }
+        // バッジ別スキル数
+        mySkillsWithBadge = {
+          new: userSkills.filter(s => s.badge === 'new').length,
+          repaired: userSkills.filter(s => s.badge === 'repaired').length,
+          derived: userSkills.filter(s => s.badge === 'derived').length,
+        };
+      }
+      // 未処理の進化提案数
+      const pool = (db as any).$client;
+      const [evRows] = await pool.execute(
+        `SELECT COUNT(*) as cnt FROM skill_evolution_proposals WHERE userId = ? AND status = 'pending'`,
+        [ctx.user.id]
+      );
+      pendingEvolutions = (evRows as Array<{ cnt: number }>)[0]?.cnt ?? 0;
+    }
+    return {
+      ...base,
+      githubLastSync,
+      githubSyncStatus,
+      totalSources,
+      totalCommunitySkills,
+      avgQualityScore,
+      pendingEvolutions,
+      mySkillsWithBadge,
+    };
   }),
 
   timeline: protectedProcedure.query(async ({ ctx }) => {
@@ -2194,12 +2256,11 @@ const evolutionRouter = router({
     }),
 
   // 進化提案をマイスキルに適用（ワンクリック合成）
-  applyProposal: protectedProcedure
+   applyProposal: protectedProcedure
     .input(z.object({ proposalId: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       const pool = (db as any).$client;
-
       // 提案を取得
       const [rows] = await pool.execute(
         `SELECT * FROM skill_evolution_proposals WHERE id = ? AND userId = ? AND status = 'pending'`,
@@ -2264,6 +2325,7 @@ const evolutionRouter = router({
         `UPDATE skill_evolution_proposals SET status = 'applied', updatedAt = NOW() WHERE id = ?`,
         [input.proposalId]
       );
+
 
       // WebSocket通知
       broadcastEvolutionEvent({ type: "skill_evolved", userId: ctx.user.id, skillName: mySkillName });

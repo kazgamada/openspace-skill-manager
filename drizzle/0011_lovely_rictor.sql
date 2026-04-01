@@ -1,0 +1,1 @@
+ALTER TABLE `skills` ADD `badge` varchar(16);

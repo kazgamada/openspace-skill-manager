@@ -43,6 +43,7 @@ export const skills = mysqlTable("skills", {
   sourceRepo: varchar("sourceRepo", { length: 512 }), // GitHub repo URL if imported from GitHub
   sourceFile: varchar("sourceFile", { length: 512 }), // original file path in repo
   mergedFrom: text("mergedFrom"), // JSON array of source skill IDs used in AI merge
+  badge: varchar("badge", { length: 16 }), // null | 'new' | 'repaired' | 'derived'
   stars: int("stars").default(0).notNull(),
   downloadCount: int("downloadCount").default(0).notNull(),
   currentVersionId: varchar("currentVersionId", { length: 64 }),

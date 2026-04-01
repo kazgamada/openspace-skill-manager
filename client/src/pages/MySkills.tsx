@@ -132,6 +132,23 @@ function MySkillsGrid({ children, viewMode }: { children: React.ReactNode; viewM
 }
 
 // ─── MySkillCard ──────────────────────────────────────────────────
+// バッジコンポーネント
+function SkillStatusBadge({ badge }: { badge?: string | null }) {
+  if (!badge) return null;
+  const map: Record<string, { label: string; cls: string }> = {
+    new: { label: "新規", cls: "bg-cyan-500/15 text-cyan-300 border-cyan-500/30" },
+    repaired: { label: "修復済", cls: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" },
+    derived: { label: "派生", cls: "bg-purple-500/15 text-purple-300 border-purple-500/30" },
+  };
+  const info = map[badge];
+  if (!info) return null;
+  return (
+    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold border ${info.cls}`}>
+      {info.label}
+    </span>
+  );
+}
+
 interface MySkillCardProps {
   skill: {
     id: string;
@@ -143,6 +160,7 @@ interface MySkillCardProps {
     updatedAt: Date;
     createdAt?: Date | null;
     sourceRepo?: string | null;
+    badge?: string | null;
   };
   tags: string[];
   viewMode: ViewMode;
@@ -201,7 +219,8 @@ function MySkillCard({ skill, tags, viewMode, onNavigate, onUpload, onDelete, up
               <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                 <p className="text-sm font-semibold">{skill.name}</p>
                 {skill.category && <Badge variant="outline" className="text-[10px] px-1.5 py-0">{skill.category}</Badge>}
-                {isNew && <Badge className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 h-4 px-1.5">NEW</Badge>}
+                {isNew && !skill.badge && <Badge className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 h-4 px-1.5">NEW</Badge>}
+                <SkillStatusBadge badge={skill.badge} />
                 {skill.isPublic ? <Globe className="w-3 h-3 text-primary" /> : <Lock className="w-3 h-3 text-muted-foreground" />}
                 {sourceLink && (
                   <a href={sourceLink} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}
@@ -257,7 +276,8 @@ function MySkillCard({ skill, tags, viewMode, onNavigate, onUpload, onDelete, up
             <span className="text-[10px] text-muted-foreground/40">—</span>
           )}
         </div>
-        {isNew && <Badge className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 h-4 px-1 shrink-0">NEW</Badge>}
+        {isNew && !skill.badge && <Badge className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 h-4 px-1 shrink-0">NEW</Badge>}
+        <SkillStatusBadge badge={skill.badge} />
         {menu}
       </div>
     );
@@ -298,7 +318,8 @@ function MySkillCard({ skill, tags, viewMode, onNavigate, onUpload, onDelete, up
             <div className="min-w-0">
               <div className="flex items-center gap-1.5 flex-wrap">
                 <p className="text-sm font-semibold truncate">{skill.name}</p>
-                {isNew && <Badge className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 h-4 px-1.5">NEW</Badge>}
+                {isNew && !skill.badge && <Badge className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 h-4 px-1.5">NEW</Badge>}
+                <SkillStatusBadge badge={skill.badge} />
               </div>
               <div className="flex items-center gap-1.5 mt-0.5">
                 {skill.category && <Badge variant="outline" className="text-[10px] px-1.5 py-0">{skill.category}</Badge>}
