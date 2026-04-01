@@ -316,15 +316,15 @@
 
 ## 品質スコアツールチップの計算式説明を正確化
 
-- [ ] MySkills.tsx: ScoreTooltipContentのクロール計算式を実際のコードに基づく正確な説明に更新
-- [ ] Community.tsx: QualityBarツールチップのクロール計算式を同様に更新
+- [x] MySkills.tsx: ScoreTooltipContentのクロール計算式を実際のコードに基づく正確な説明に更新
+- [x] Community.tsx: QualityBarツールチップのクロール計算式を同様に更新
 
 ## 設定ページ構造の再設計
 
-- [ ] 初期設定ウィザードのタブを廃止し、第2カラム縦メニュー（GitHub連携・Claude Code連携）に変更
-- [ ] 外部サービス連携セクション（GitHub/Claude Code）を手動設定から初期設定の各サブページに移動
-- [ ] 手動設定から外部サービス連携セクションを削除
-- [ ] UserSettings全体を3カラム構造（DashboardLayout左サイドバー→第2カラム縦メニュー→コンテンツ）に変更
+- [x] 初期設定ウィザードのタブを廃止し、第2カラム縦メニュー（GitHub連携・Claude Code連携・全4項目）に変更
+- [x] 外部サービス連携セクションを手動設定から初期設定の各サブページに移動
+- [x] 手動設定から外部サービス連携セクションを削除
+- [x] UserSettings全体を3カラム構造（DashboardLayout左サイドバー→第2カラム縦メニュー→コンテンツ）に変更
 
 ## 設定ページ第2カラム縦メニュー拡張
 
