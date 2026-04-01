@@ -58,7 +58,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
-import { desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { communitySkills, githubSyncLogs, skillSources, skillVersions, skills } from "../drizzle/schema";
 
 // ─────────────────────────────────────────────
@@ -2000,10 +2000,66 @@ const settingsRouter = router({
       );
       return { success: true, logId };
     }),
+  // ── スキル広場用 監視先リスト ──
+  getPublicWatchList: protectedProcedure.query(async ({ ctx }) => {
+    const s = await getUserSettingsByUserId(ctx.user.id);
+    if (!s?.publicWatchList) return [];
+    try {
+      return JSON.parse(s.publicWatchList) as Array<{
+        id: string;
+        label: string;
+        repoOwner: string;
+        repoName: string;
+        skillsPath: string;
+        branch: string;
+      }>;
+    } catch { return []; }
+  }),
+  savePublicWatchList: protectedProcedure
+    .input(z.object({
+      watchList: z.array(z.object({
+        id: z.string(),
+        label: z.string(),
+        repoOwner: z.string(),
+        repoName: z.string(),
+        skillsPath: z.string().default("skills"),
+        branch: z.string().default("main"),
+      })),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      await upsertUserSettings(ctx.user.id, {
+        publicWatchList: JSON.stringify(input.watchList),
+      });
+      // skill_sourcesテーブルに同期（新規のみ追加、削除はしない）
+      const db = await getDb();
+      if (!db) return { success: true, count: 0 };
+      for (const w of input.watchList) {
+        try {
+          const existing = await db
+            .select()
+            .from(skillSources)
+            .where(and(eq(skillSources.repoOwner, w.repoOwner), eq(skillSources.repoName, w.repoName)))
+            .limit(1);
+          if (existing.length === 0) {
+            await db.insert(skillSources).values({
+              name: w.label || `${w.repoOwner}/${w.repoName}`,
+              repoOwner: w.repoOwner,
+              repoName: w.repoName,
+              skillsPath: w.skillsPath || "skills",
+              branch: w.branch || "main",
+              autoSync: true,
+              syncIntervalHours: 6,
+            });
+          }
+        } catch (e) {
+          console.warn("[savePublicWatchList] skill_sources upsert warn:", e);
+        }
+      }
+      return { success: true, count: input.watchList.length };
+    }),
 });
-
 // ─────────────────────────────────────────────
-// Admin router
+// Admin routerr
 // ─────────────────────────────────────────────
 const adminRouter = router({
   users: adminProcedure.query(async () => {

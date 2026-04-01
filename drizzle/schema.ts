@@ -196,6 +196,8 @@ export const userSettings = mysqlTable("user_settings", {
   githubSyncFrequencyHours: int("githubSyncFrequencyHours").default(24).notNull(),
   // Last time GitHub auto sync ran for this user
   githubLastSyncAt: timestamp("githubLastSyncAt"),
+  // スキル広場用 監視先リスト（JSON配列: [{repoOwner, repoName, skillsPath, branch, label}]）
+  publicWatchList: text("publicWatchList"),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 

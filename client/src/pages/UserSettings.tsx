@@ -20,8 +20,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
   AlertCircle, CheckCircle2, ChevronRight, Clock, Github,
-  HardDrive, Link2, Loader2, Play, RefreshCw, Settings,
-  Terminal, Upload, User, Wand2, Zap,
+  Globe, HardDrive, Link2, Loader2, Lock, Play, PlusCircle,
+  RefreshCw, Settings, Terminal, Trash2, Upload, User, Wand2, Zap,
 } from "lucide-react";
 
 // ─── ユーザーアカウントタブ ───────────────────────────────────────────────────
@@ -140,9 +140,42 @@ function WizardTab() {
     }, {});
   const prefs = prefsQuery.data as Record<string, unknown> | undefined;
 
+  // マイスキル用 GitHubアカウント
   const [githubToken, setGithubToken] = useState("");
-  const [githubRepo, setGithubRepo] = useState("");
   const githubConnected = intMap["github"]?.connected ?? false;
+
+  // スキル広場用 監視先リスト
+  const watchListQuery = trpc.settings.getPublicWatchList.useQuery();
+  const saveWatchList = trpc.settings.savePublicWatchList.useMutation({
+    onSuccess: (res) => { toast.success(`監視先リストを保存しました（${res.count}件）`); utils.settings.getPublicWatchList.invalidate(); },
+    onError: (e) => toast.error(e.message),
+  });
+  type WatchEntry = { id: string; label: string; repoOwner: string; repoName: string; skillsPath: string; branch: string };
+  const [watchList, setWatchList] = useState<WatchEntry[]>([]);
+  const [watchInput, setWatchInput] = useState(""); // "owner/repo" 形式
+  const [watchLabel, setWatchLabel] = useState("");
+  // watchListQueryのデータが来たら初期化
+  const watchListData = watchListQuery.data as WatchEntry[] | undefined;
+  const effectiveWatchList = watchList.length > 0 || watchListData === undefined ? watchList : watchListData;
+
+  const addWatchEntry = () => {
+    const trimmed = watchInput.trim();
+    if (!trimmed) return;
+    const parts = trimmed.split("/");
+    if (parts.length < 2) { toast.error("owner/repo 形式で入力してください"); return; }
+    const repoOwner = parts[0];
+    const repoName = parts[1];
+    const id = `${repoOwner}-${repoName}-${Date.now()}`;
+    const newEntry: WatchEntry = { id, label: watchLabel || `${repoOwner}/${repoName}`, repoOwner, repoName, skillsPath: "skills", branch: "main" };
+    const base = watchList.length > 0 ? watchList : (watchListData ?? []);
+    setWatchList([...base, newEntry]);
+    setWatchInput("");
+    setWatchLabel("");
+  };
+  const removeWatchEntry = (id: string) => {
+    const base = watchList.length > 0 ? watchList : (watchListData ?? []);
+    setWatchList(base.filter((e) => e.id !== id));
+  };
   const [syncInterval, setSyncInterval] = useState(String(prefs?.syncIntervalHours ?? 6));
   const [syncBranch, setSyncBranch] = useState(String(prefs?.syncBranch ?? "main"));
   const [qualityThreshold, setQualityThreshold] = useState(String(prefs?.qualityThreshold ?? 60));
@@ -158,7 +191,12 @@ function WizardTab() {
       if (!githubToken && !githubConnected) { toast.info("GitHubトークンを入力してください"); return; }
       if (githubToken) {
         const existing = intMap["github"]?.config ?? {};
-        saveIntegration.mutate({ service: "github", config: { ...existing, token: githubToken, repo: githubRepo } });
+        saveIntegration.mutate({ service: "github", config: { ...existing, token: githubToken } });
+      }
+      // 監視先リストを保存
+      const listToSave = watchList.length > 0 ? watchList : (watchListData ?? []);
+      if (listToSave.length > 0) {
+        saveWatchList.mutate({ watchList: listToSave });
       }
     } else if (step === 2) {
       toast.success("同期スケジュールを保存しました（設定反映は次回同期時）");
@@ -236,10 +274,46 @@ function WizardTab() {
                   </a> で生成（repo スコープが必要）
                 </p>
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">監視対象リポジトリ（任意）</Label>
-                <Input value={githubRepo} onChange={(e) => setGithubRepo(e.target.value)} placeholder="owner/repo-name" className="h-8 text-sm font-mono" />
-                <p className="text-[10px] text-muted-foreground">空欄の場合はスキル広場の公開スキルのみ対象</p>
+              {/* スキル広場用 監視先リスト セクション */}
+              <div className="border-t border-border pt-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Globe className="w-4 h-4 text-primary shrink-0" />
+                  <div>
+                    <p className="text-xs font-semibold">スキル広場用 監視先リスト</p>
+                    <p className="text-[10px] text-muted-foreground">公開GitHubアカウント/リポジトリを登録してスキル広場に自動取得。トークン不要。</p>
+                  </div>
+                </div>
+                {/* 登録済みリスト */}
+                {effectiveWatchList.length > 0 && (
+                  <div className="space-y-1.5">
+                    {effectiveWatchList.map((entry) => (
+                      <div key={entry.id} className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted/20 border border-border/50">
+                        <Globe className="w-3 h-3 text-muted-foreground shrink-0" />
+                        <span className="text-xs font-mono flex-1">{entry.repoOwner}/{entry.repoName}</span>
+                        {entry.label !== `${entry.repoOwner}/${entry.repoName}` && (
+                          <span className="text-[10px] text-muted-foreground">{entry.label}</span>
+                        )}
+                        <button onClick={() => removeWatchEntry(entry.id)} className="text-muted-foreground hover:text-destructive">
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* 新規追加 */}
+                <div className="flex gap-2">
+                  <Input
+                    value={watchInput}
+                    onChange={(e) => setWatchInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && addWatchEntry()}
+                    placeholder="owner/repo-name"
+                    className="h-7 text-xs font-mono flex-1"
+                  />
+                  <Button size="sm" variant="outline" className="h-7 text-xs gap-1 shrink-0" onClick={addWatchEntry}>
+                    <PlusCircle className="w-3 h-3" />追加
+                  </Button>
+                </div>
+                <p className="text-[10px] text-muted-foreground">例: affaan-m/everything-claude-code　・・・複数登録可能</p>
               </div>
             </>
           )}
