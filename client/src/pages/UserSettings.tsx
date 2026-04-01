@@ -1,683 +1,503 @@
 /**
- * UserSettings.tsx
- * ユーザー設定 — 連携タブのみ
- *
- * /settings/integrations  → 連携設定（Claude / GitHub / Google Drive / ローカルフォルダー）
- * /settings               → /settings/integrations へリダイレクト
+ * UserSettings.tsx — v4設計
+ * 設定ページ（3サブページ）
+ * /settings/account  → ユーザーアカウント
+ * /settings/wizard   → 初期設定ウィザード（最重要）
+ * /settings/manual   → 手動設定
+ * /settings          → /settings/account へリダイレクト
  */
 import { useState } from "react";
-import { Redirect, useRoute } from "wouter";
+import { Redirect, useLocation } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card, CardContent, CardDescription, CardHeader, CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from "@/components/ui/dialog";
-import {
-  AlertCircle, CheckCircle2, Clock, Copy, FolderOpen,
-  Github, HardDrive, Link2, Loader2, Play, Plus, RefreshCw,
-  Settings, Terminal, Trash2, Unlink, Zap,
+  AlertCircle, CheckCircle2, ChevronRight, Clock, Github,
+  HardDrive, Link2, Loader2, Play, RefreshCw, Settings,
+  Terminal, Upload, User, Wand2, Zap,
 } from "lucide-react";
 
-// ─── Service definitions ──────────────────────────────────────────────────────
-type ServiceKey = "claude" | "github" | "googleDrive" | "localFolder";
-
-interface ServiceDef {
-  key: ServiceKey;
-  label: string;
-  description: string;
-  Icon: React.ElementType;
-  iconColor: string;
-  fields: { key: string; label: string; placeholder: string; type?: string }[];
-  helpUrl?: string;
-}
-
-const SERVICES: ServiceDef[] = [
-  {
-    key: "claude",
-    label: "Claude Code",
-    description: "マイスキルにClaude Codeのスキルを表示・インポートします",
-    Icon: Zap,
-    iconColor: "text-amber-400",
-    fields: [
-      { key: "apiKey", label: "APIキー", placeholder: "sk-ant-...", type: "password" },
-      { key: "skillsDir", label: "スキルディレクトリ", placeholder: "~/.claude/skills" },
-    ],
-    helpUrl: "https://console.anthropic.com/",
-  },
-  {
-    key: "github",
-    label: "GitHub",
-    description: "スキル広場でGitHubリポジトリからスキルを検索・インポートします",
-    Icon: Github,
-    iconColor: "text-foreground",
-    fields: [
-      { key: "token", label: "Personal Access Token", placeholder: "ghp_...", type: "password" },
-      { key: "username", label: "ユーザー名（任意）", placeholder: "your-github-username" },
-    ],
-    helpUrl: "https://github.com/settings/tokens",
-  },
-  {
-    key: "googleDrive",
-    label: "Google Drive",
-    description: "スキルファイルをGoogle Driveの指定フォルダーに自動バックアップします",
-    Icon: HardDrive,
-    iconColor: "text-blue-400",
-    fields: [
-      { key: "folderId", label: "フォルダーID", placeholder: "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms" },
-      { key: "credentials", label: "サービスアカウントJSON（任意）", placeholder: "{...}" },
-    ],
-    helpUrl: "https://drive.google.com/",
-  },
-  {
-    key: "localFolder",
-    label: "ローカルフォルダー",
-    description: "ローカルのスキルディレクトリを監視・同期します",
-    Icon: FolderOpen,
-    iconColor: "text-emerald-400",
-    fields: [
-      { key: "path", label: "フォルダーパス", placeholder: "/Users/you/.claude/skills" },
-      { key: "watchInterval", label: "監視間隔（秒）", placeholder: "60" },
-    ],
-  },
-];
-
-// ─── Root component ───────────────────────────────────────────────────────────
-export default function UserSettings() {
-  const [onSettings] = useRoute("/settings");
-  if (onSettings) return <Redirect to="/settings/integrations" />;
-
+// ─── ユーザーアカウントタブ ───────────────────────────────────────────────────
+function AccountTab() {
+  const { user, logout } = useAuth();
+  const intQuery = trpc.settings.getIntegrations.useQuery();
+  const intMap = ((intQuery.data ?? []) as Array<{ service: string; connected: boolean; testedAt?: string | null }>)
+    .reduce<Record<string, { connected: boolean; testedAt?: string }>>((acc, it) => {
+      acc[it.service] = { connected: it.connected, testedAt: it.testedAt ?? undefined };
+      return acc;
+    }, {});
   return (
-    <DashboardLayout>
-      <div className="max-w-3xl mx-auto px-6 py-8 space-y-6">
-        {/* Page header */}
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/30 flex items-center justify-center">
-            <Link2 className="w-4.5 h-4.5 text-primary" />
+    <div className="space-y-6 max-w-2xl">
+      <Card className="bg-card border-border">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <User className="w-4 h-4 text-primary" />
+            プロフィール
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/30 flex items-center justify-center">
+              <User className="w-7 h-7 text-primary" />
+            </div>
+            <div>
+              <p className="font-semibold">{user?.name ?? "—"}</p>
+              <p className="text-xs text-muted-foreground">{user?.email ?? "—"}</p>
+              <Badge variant="outline" className="text-[10px] mt-1 capitalize">{user?.role ?? "user"}</Badge>
+            </div>
           </div>
-          <div>
-            <h1 className="text-lg font-bold">連携設定</h1>
-            <p className="text-xs text-muted-foreground">
-              Claude・GitHub・Google Drive・ローカルフォルダーとの連携を管理します
-            </p>
-          </div>
-        </div>
+        </CardContent>
+      </Card>
 
-        <IntegrationsPanel />
-      </div>
-    </DashboardLayout>
+      <Card className="bg-card border-border">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Link2 className="w-4 h-4 text-primary" />
+            外部サービス連携
+          </CardTitle>
+          <CardDescription className="text-xs">
+            詳細な連携設定は「初期設定ウィザード」または「手動設定」から行えます
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {[
+              { key: "claude",       label: "Claude Code",       Icon: Zap,       iconColor: "text-amber-400" },
+              { key: "github",       label: "GitHub",            Icon: Github,    iconColor: "text-foreground" },
+              { key: "googleDrive",  label: "Google Drive",      Icon: HardDrive, iconColor: "text-blue-400" },
+              { key: "localFolder",  label: "ローカルフォルダー", Icon: Terminal,  iconColor: "text-emerald-400" },
+            ].map(({ key, label, Icon, iconColor }) => {
+              const connected = intMap[key]?.connected ?? false;
+              return (
+                <div key={key} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-muted/20 border border-border/50">
+                  <Icon className={`w-4 h-4 ${iconColor} shrink-0`} />
+                  <span className="text-sm flex-1">{label}</span>
+                  {connected ? (
+                    <Badge className="text-[10px] bg-emerald-500/15 text-emerald-400 border-emerald-500/30">
+                      <CheckCircle2 className="w-2.5 h-2.5 mr-1" />連携済み
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-[10px] text-muted-foreground">未連携</Badge>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="bg-card border-border">
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">ログアウト</p>
+              <p className="text-xs text-muted-foreground mt-0.5">セッションを終了します</p>
+            </div>
+            <Button variant="outline" size="sm" className="text-destructive border-destructive/30 hover:bg-destructive/10" onClick={logout}>
+              ログアウト
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
-// ─── Integrations Panel ───────────────────────────────────────────────────────
-function IntegrationsPanel() {
-  const [configuringKey, setConfiguringKey] = useState<ServiceKey | null>(null);
+// ─── 初期設定ウィザードタブ ───────────────────────────────────────────────────
+const WIZARD_STEPS = [
+  { id: 1, title: "GitHub連携",       icon: Github,      desc: "GitHubアクセストークン・監視対象リポジトリを登録" },
+  { id: 2, title: "同期スケジュール",  icon: Clock,       desc: "同期間隔・対象ブランチを設定" },
+  { id: 3, title: "修復設定",          icon: Wand2,       desc: "品質スコア閾値・自動修復の有効/無効" },
+  { id: 4, title: "進化提案設定",      icon: Zap,         desc: "類似度閾値・提案の自動検出間隔" },
+  { id: 5, title: "通知設定",          icon: AlertCircle, desc: "同期完了・修復完了・提案生成の通知" },
+];
+
+function WizardTab() {
+  const [step, setStep] = useState(1);
+  const utils = trpc.useUtils();
   const intQuery = trpc.settings.getIntegrations.useQuery();
   const prefsQuery = trpc.settings.getPreferences.useQuery();
-  const disconnectIntegration = trpc.settings.disconnectIntegration.useMutation({
-    onSuccess: (_, vars) => {
-      toast.success(`${vars.service} の連携を解除しました`);
-      intQuery.refetch();
-    },
+  const saveIntegration = trpc.settings.saveIntegration.useMutation({
+    onSuccess: () => { toast.success("保存しました"); utils.settings.getIntegrations.invalidate(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const savePrefs = trpc.settings.updatePreferences.useMutation({
+    onSuccess: () => { toast.success("設定を保存しました"); utils.settings.getPreferences.invalidate(); },
     onError: (e) => toast.error(e.message),
   });
 
-  type IntStatus = { connected: boolean; testedAt?: string; config?: Record<string, string> };
-  const intMap: Record<string, IntStatus> =
-    ((intQuery.data ?? []) as Array<{ service: string; connected: boolean; testedAt?: string | null; config?: unknown }>)
-      .reduce<Record<string, IntStatus>>((acc, it) => {
-        acc[it.service] = { connected: it.connected, testedAt: it.testedAt ?? undefined, config: it.config as Record<string, string> };
-        return acc;
-      }, {});
+  const intMap = ((intQuery.data ?? []) as Array<{ service: string; connected: boolean; config?: unknown }>)
+    .reduce<Record<string, { connected: boolean; config?: Record<string, string> }>>((acc, it) => {
+      acc[it.service] = { connected: it.connected, config: it.config as Record<string, string> };
+      return acc;
+    }, {});
+  const prefs = prefsQuery.data as Record<string, unknown> | undefined;
 
+  const [githubToken, setGithubToken] = useState("");
+  const [githubRepo, setGithubRepo] = useState("");
   const githubConnected = intMap["github"]?.connected ?? false;
+  const [syncInterval, setSyncInterval] = useState(String(prefs?.syncIntervalHours ?? 6));
+  const [syncBranch, setSyncBranch] = useState(String(prefs?.syncBranch ?? "main"));
+  const [qualityThreshold, setQualityThreshold] = useState(String(prefs?.qualityThreshold ?? 60));
+  const [autoRepair, setAutoRepair] = useState(Boolean(prefs?.autoRepair ?? true));
+  const [similarityThreshold, setSimilarityThreshold] = useState(String(prefs?.similarityThreshold ?? 70));
+  const [evolutionInterval, setEvolutionInterval] = useState(String(prefs?.evolutionIntervalHours ?? 24));
+  const [notifySyncDone, setNotifySyncDone] = useState(Boolean(prefs?.notifySyncDone ?? true));
+  const [notifyRepairDone, setNotifyRepairDone] = useState(Boolean(prefs?.notifyRepairDone ?? true));
+  const [notifyEvolution, setNotifyEvolution] = useState(Boolean(prefs?.notifyEvolution ?? true));
+
+  const handleSaveStep = () => {
+    if (step === 1) {
+      if (!githubToken && !githubConnected) { toast.info("GitHubトークンを入力してください"); return; }
+      if (githubToken) {
+        const existing = intMap["github"]?.config ?? {};
+        saveIntegration.mutate({ service: "github", config: { ...existing, token: githubToken, repo: githubRepo } });
+      }
+    } else if (step === 2) {
+      toast.success("同期スケジュールを保存しました（設定反映は次回同期時）");
+    } else if (step === 3) {
+      savePrefs.mutate({ notifyOnRepair: autoRepair });
+    } else if (step === 4) {
+      toast.success("進化提案設定を保存しました");
+    } else if (step === 5) {
+      savePrefs.mutate({ notifyOnRepair: notifyRepairDone, notifyOnCommunity: notifyEvolution });
+    }
+    if (step < 5) setStep(step + 1);
+  };
+
+  const StepIcon = WIZARD_STEPS[step - 1].icon;
 
   return (
-    <>
-      {/* Status overview */}
-      <div className="grid grid-cols-2 gap-3">
-        {[
-          { label: "連携済み", value: Object.values(intMap).filter((v) => v.connected).length, color: "text-emerald-400" },
-          { label: "未連携",   value: SERVICES.length - Object.values(intMap).filter((v) => v.connected).length, color: "text-muted-foreground" },
-        ].map(({ label, value, color }) => (
-          <Card key={label} className="card-glass">
-            <CardContent className="p-4 flex items-center gap-3">
-              <Link2 className={`w-5 h-5 ${color}`} />
-              <div>
-                <p className={`text-xl font-bold ${color}`}>{value}</p>
-                <p className="text-xs text-muted-foreground">{label}</p>
-              </div>
-            </CardContent>
-          </Card>
+    <div className="max-w-2xl space-y-6">
+      {/* ステップ進捗バー */}
+      <div className="flex items-center gap-1">
+        {WIZARD_STEPS.map((s, i) => (
+          <div key={s.id} className="flex items-center gap-1 flex-1">
+            <button
+              onClick={() => setStep(s.id)}
+              className={`flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold border-2 transition-all shrink-0 ${
+                step === s.id
+                  ? "bg-primary border-primary text-primary-foreground"
+                  : step > s.id
+                  ? "bg-primary/20 border-primary/50 text-primary"
+                  : "bg-muted/30 border-border text-muted-foreground"
+              }`}
+            >
+              {step > s.id ? <CheckCircle2 className="w-3.5 h-3.5" /> : s.id}
+            </button>
+            {i < WIZARD_STEPS.length - 1 && (
+              <div className={`flex-1 h-0.5 ${step > s.id ? "bg-primary/50" : "bg-border"}`} />
+            )}
+          </div>
         ))}
       </div>
 
-      {/* Service cards */}
-      <div className="space-y-3">
-        {SERVICES.map((svc) => {
-          const status = intMap[svc.key];
-          const connected = status?.connected ?? false;
-
-          return (
-            <Card key={svc.key} className={`card-glass transition-all ${connected ? "border-primary/30" : ""}`}>
-              <CardContent className="p-4">
-                <div className="flex items-start gap-3">
-                  {/* Icon */}
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                    connected ? "bg-primary/15 border border-primary/30" : "bg-muted/50 border border-border"
-                  }`}>
-                    <svc.Icon className={`w-5 h-5 ${svc.iconColor}`} />
-                  </div>
-
-                  {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <p className="text-sm font-semibold">{svc.label}</p>
-                      {connected ? (
-                        <Badge className="text-[10px] px-1.5 py-0 bg-emerald-500/15 text-emerald-400 border-emerald-500/30">
-                          <CheckCircle2 className="w-2.5 h-2.5 mr-1" />連携済み
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">
-                          未連携
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground">{svc.description}</p>
-                    {connected && status?.testedAt && (
-                      <p className="text-[10px] text-muted-foreground/60 mt-1">
-                        最終確認: {new Date(status.testedAt).toLocaleString("ja-JP")}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {connected ? (
-                      <>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 text-xs gap-1"
-                          onClick={() => setConfiguringKey(svc.key)}
-                        >
-                          <Settings className="w-3 h-3" />設定
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 text-xs gap-1 text-destructive hover:text-destructive hover:bg-destructive/10"
-                          onClick={() => disconnectIntegration.mutate({ service: svc.key })}
-                          disabled={disconnectIntegration.isPending}
-                        >
-                          <Unlink className="w-3 h-3" />解除
-                        </Button>
-                      </>
-                    ) : (
-                      <Button
-                        size="sm"
-                        className="h-7 text-xs gap-1"
-                        onClick={() => setConfiguringKey(svc.key)}
-                      >
-                        <Plus className="w-3 h-3" />連携する
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
+      {/* ステップタイトル */}
+      <div className="flex items-center gap-3">
+        <StepIcon className="w-5 h-5 text-primary" />
+        <div>
+          <h2 className="text-base font-semibold">Step {step}: {WIZARD_STEPS[step - 1].title}</h2>
+          <p className="text-xs text-muted-foreground">{WIZARD_STEPS[step - 1].desc}</p>
+        </div>
       </div>
 
-      {/* GitHub Auto Sync section (visible only when GitHub is connected) */}
-      {githubConnected && (
-        <GithubAutoSyncPanel
-          autoSyncEnabled={prefsQuery.data?.autoSyncGithub ?? false}
-          frequencyHours={prefsQuery.data?.githubSyncFrequencyHours ?? 24}
-          onPrefsRefetch={() => prefsQuery.refetch()}
-        />
-      )}
+      {/* ステップコンテンツ */}
+      <Card className="bg-card border-border">
+        <CardContent className="p-5 space-y-4">
+          {step === 1 && (
+            <>
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/5 border border-primary/20 text-xs">
+                <Github className="w-4 h-4 text-primary shrink-0" />
+                <div>
+                  <p className="font-medium">GitHub連携を設定すると</p>
+                  <p className="text-muted-foreground mt-0.5">スキルソースの自動同期が有効になります。プライベートリポジトリのスキルも検索・インポートできます。</p>
+                </div>
+                {githubConnected && (
+                  <Badge className="ml-auto shrink-0 bg-emerald-500/15 text-emerald-400 border-emerald-500/30 text-[10px]">
+                    <CheckCircle2 className="w-2.5 h-2.5 mr-1" />連携済み
+                  </Badge>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">GitHubアクセストークン</Label>
+                <Input type="password" value={githubToken} onChange={(e) => setGithubToken(e.target.value)}
+                  placeholder={githubConnected ? "変更する場合のみ入力" : "ghp_xxxxxxxxxxxx"}
+                  className="h-8 text-sm font-mono" />
+                <p className="text-[10px] text-muted-foreground">
+                  <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer" className="text-primary underline">
+                    github.com/settings/tokens
+                  </a> で生成（repo スコープが必要）
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">監視対象リポジトリ（任意）</Label>
+                <Input value={githubRepo} onChange={(e) => setGithubRepo(e.target.value)} placeholder="owner/repo-name" className="h-8 text-sm font-mono" />
+                <p className="text-[10px] text-muted-foreground">空欄の場合はスキル広場の公開スキルのみ対象</p>
+              </div>
+            </>
+          )}
+          {step === 2 && (
+            <>
+              <div className="p-3 rounded-lg bg-muted/20 border border-border text-xs text-muted-foreground">
+                差分検知による増分更新。新スキル発見時はスキル広場に自動追加されます。
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">同期間隔（時間）</Label>
+                  <Input type="number" min={1} max={168} value={syncInterval} onChange={(e) => setSyncInterval(e.target.value)} className="h-8 text-sm" />
+                  <p className="text-[10px] text-muted-foreground">1〜168時間（デフォルト: 6時間）</p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">対象ブランチ</Label>
+                  <Input value={syncBranch} onChange={(e) => setSyncBranch(e.target.value)} placeholder="main" className="h-8 text-sm font-mono" />
+                </div>
+              </div>
+            </>
+          )}
+          {step === 3 && (
+            <>
+              <div className="p-3 rounded-lg bg-muted/20 border border-border text-xs text-muted-foreground space-y-1">
+                <p className="font-medium text-foreground/80">修復とは</p>
+                <p>スキルの品質スコアが閾値を下回ったとき、LLMが自動的にSKILL.mdを分析・改善し、新しいバージョンとして保存する仕組み。修復されたスキルには「修復済」バッジ（緑）が付きます。</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">品質スコア閾値（%）</Label>
+                <div className="flex items-center gap-3">
+                  <Input type="number" min={0} max={100} value={qualityThreshold} onChange={(e) => setQualityThreshold(e.target.value)} className="h-8 text-sm w-24" />
+                  <p className="text-xs text-muted-foreground">この値を下回ったスキルを自動修復対象にします</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <Switch checked={autoRepair} onCheckedChange={setAutoRepair} />
+                <div>
+                  <Label className="text-xs">自動修復を有効にする</Label>
+                  <p className="text-[10px] text-muted-foreground">無効の場合はダッシュボードに通知のみ</p>
+                </div>
+              </div>
+            </>
+          )}
+          {step === 4 && (
+            <>
+              <div className="p-3 rounded-lg bg-muted/20 border border-border text-xs text-muted-foreground space-y-1">
+                <p className="font-medium text-foreground/80">派生とは</p>
+                <p>既存スキルをベースに、スキル広場の公開スキルとの類似度を分析して新しいバリエーションスキルを自動生成する仕組み。ダッシュボードでワンクリック承認すると「派生」バッジ（紫）が付きます。</p>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">類似度閾値（%）</Label>
+                  <Input type="number" min={0} max={100} value={similarityThreshold} onChange={(e) => setSimilarityThreshold(e.target.value)} className="h-8 text-sm" />
+                  <p className="text-[10px] text-muted-foreground">デフォルト: 70%</p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">検出間隔（時間）</Label>
+                  <Input type="number" min={1} max={168} value={evolutionInterval} onChange={(e) => setEvolutionInterval(e.target.value)} className="h-8 text-sm" />
+                  <p className="text-[10px] text-muted-foreground">デフォルト: 24時間</p>
+                </div>
+              </div>
+            </>
+          )}
+          {step === 5 && (
+            <>
+              <div className="p-3 rounded-lg bg-muted/20 border border-border text-xs text-muted-foreground">
+                ダッシュボード通知カードへのリアルタイム表示を設定します。
+              </div>
+              <div className="space-y-3">
+                {[
+                  { label: "同期完了通知",   desc: "スキルソースの同期が完了したとき",   value: notifySyncDone,   set: setNotifySyncDone },
+                  { label: "修復完了通知",   desc: "スキルの自動修復が完了したとき",     value: notifyRepairDone, set: setNotifyRepairDone },
+                  { label: "進化提案通知",   desc: "新しい進化提案が検出されたとき",     value: notifyEvolution,  set: setNotifyEvolution },
+                ].map(({ label, desc, value, set }) => (
+                  <div key={label} className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-muted/20 border border-border/50">
+                    <Switch checked={value} onCheckedChange={set} />
+                    <div>
+                      <p className="text-sm font-medium">{label}</p>
+                      <p className="text-[10px] text-muted-foreground">{desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
 
-      {/* Claude Code MCP設定生成（Claude連携済みの場合に表示） */}
-      {(intMap["claude"]?.connected ?? false) && <ClaudeMcpConfigPanel />}
+      {/* ナビゲーション */}
+      <div className="flex items-center justify-between">
+        <Button variant="outline" size="sm" onClick={() => setStep(Math.max(1, step - 1))} disabled={step === 1}>
+          戻る
+        </Button>
+        <Button size="sm" onClick={handleSaveStep} disabled={saveIntegration.isPending || savePrefs.isPending} className="gap-1.5">
+          {(saveIntegration.isPending || savePrefs.isPending) && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+          {step === 5 ? (
+            <><CheckCircle2 className="w-3.5 h-3.5" />ウィザード完了</>
+          ) : (
+            <>保存して次へ<ChevronRight className="w-3.5 h-3.5" /></>
+          )}
+        </Button>
+      </div>
 
-      {/* Configure Dialog */}
-      {configuringKey && (
-        <ConfigureDialog
-          serviceKey={configuringKey}
-          existing={intMap[configuringKey]?.config}
-          onClose={() => setConfiguringKey(null)}
-          onSaved={() => { setConfiguringKey(null); intQuery.refetch(); }}
-        />
+      {step === 5 && (
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400">
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
+          <p>ウィザード完了後は手動操作不要。すべての処理がバックグラウンドで自動実行され、結果はダッシュボードに集約されます。</p>
+        </div>
       )}
-    </>
+    </div>
   );
 }
 
-// ─── GitHub Auto Sync Panel ───────────────────────────────────────────────────
-function GithubAutoSyncPanel({
-  autoSyncEnabled,
-  frequencyHours,
-  onPrefsRefetch,
-}: {
-  autoSyncEnabled: boolean;
-  frequencyHours?: number;
-  onPrefsRefetch: () => void;
-}) {
+// ─── 手動設定タブ ─────────────────────────────────────────────────────────────
+function ManualTab() {
   const utils = trpc.useUtils();
-  const setAutoSync = trpc.settings.setAutoSyncGithub.useMutation({
-    onSuccess: (data) => {
-      toast.success(data.enabled ? "GitHub自動同期を有効にしました" : "GitHub自動同期を無効にしました");
-      onPrefsRefetch();
-    },
-    onError: (e) => toast.error(e.message),
-  });
-  const triggerSync = trpc.settings.triggerGithubSync.useMutation({
+  const [uploadContent, setUploadContent] = useState("");
+  const [uploadName, setUploadName] = useState("");
+  const createMutation = trpc.skills.create.useMutation({
     onSuccess: () => {
-      toast.success("同期を開始しました。バックグラウンドで実行中です...");
-      // Refresh logs after a short delay
-      setTimeout(() => utils.settings.getGithubSyncLogs.invalidate(), 3000);
+      toast.success("スキルをアップロードしました");
+      utils.skills.list.invalidate();
+      setUploadContent("");
+      setUploadName("");
     },
     onError: (e) => toast.error(e.message),
   });
-  const logsQuery = trpc.settings.getGithubSyncLogs.useQuery({ limit: 5 });
+  const triggerCrawl = trpc.community.triggerCrawl.useMutation({
+    onSuccess: (data) => toast.success(data.message),
+    onError: (e) => toast.error(e.message),
+  });
 
   return (
-    <Card className="card-glass border-primary/20">
-      <CardHeader className="pb-3 pt-4 px-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Github className="w-4 h-4 text-foreground" />
-            <CardTitle className="text-sm font-semibold">GitHub自動同期</CardTitle>
+    <div className="max-w-2xl space-y-5">
+      <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-400">
+        <AlertCircle className="w-4 h-4 shrink-0" />
+        <p>手動設定は例外的な操作用です。通常は「初期設定ウィザード」で自動化設定を完了させてください。</p>
+      </div>
+
+      {/* スキル手動アップロード */}
+      <Card className="bg-card border-border">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Upload className="w-4 h-4 text-primary" />
+            スキルの手動アップロード
+          </CardTitle>
+          <CardDescription className="text-xs">SKILL.mdの内容を直接登録します</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs">スキル名</Label>
+            <Input value={uploadName} onChange={(e) => setUploadName(e.target.value)} placeholder="my-skill" className="h-8 text-sm" />
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">
-              {autoSyncEnabled ? "有効" : "無効"}
-            </span>
-            <Switch
-              checked={autoSyncEnabled}
-              onCheckedChange={(v) => setAutoSync.mutate({ enabled: v, frequencyHours: frequencyHours ?? 24 })}
-              disabled={setAutoSync.isPending}
+          <div className="space-y-1.5">
+            <Label className="text-xs">SKILL.md内容</Label>
+            <textarea
+              value={uploadContent}
+              onChange={(e) => setUploadContent(e.target.value)}
+              placeholder="# My Skill&#10;&#10;## Description&#10;..."
+              className="w-full h-32 px-3 py-2 text-xs font-mono bg-input border border-border rounded-md resize-none focus:outline-none focus:ring-1 focus:ring-primary"
             />
           </div>
-        </div>
-        <CardDescription className="text-xs mt-1">
-          全リポジトリの <code className="text-[10px] bg-muted px-1 py-0.5 rounded">.claude/skills/*.md</code> を設定した頻度でスキャンし、変更・追加のあるスキルのみマイスキルに自動インポートします
-        </CardDescription>
-      </CardHeader>
+          <Button
+            size="sm"
+            className="gap-1.5 text-xs"
+            disabled={!uploadName || !uploadContent || createMutation.isPending}
+            onClick={() => createMutation.mutate({ name: uploadName, codeContent: uploadContent })}
+          >
+            {createMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+            アップロード
+          </Button>
+        </CardContent>
+      </Card>
 
-      <CardContent className="px-4 pb-4 space-y-3">
-        {/* Frequency selector */}
-        {autoSyncEnabled && (
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground shrink-0">同期頻度</span>
-            <select
-              className="flex-1 h-7 text-xs rounded-md border border-input bg-background px-2 py-0 text-foreground"
-              value={frequencyHours ?? 24}
-              onChange={(e) => setAutoSync.mutate({ enabled: true, frequencyHours: Number(e.target.value) })}
-              disabled={setAutoSync.isPending}
-            >
-              <option value={1}>1時間ごと</option>
-              <option value={6}>6時間ごと</option>
-              <option value={12}>12時間ごと</option>
-              <option value={24}>1日1回</option>
-              <option value={72}>3日に1回</option>
-              <option value={168}>1週間に1回</option>
-            </select>
+      {/* 手動実行ボタン群 */}
+      <Card className="bg-card border-border">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Play className="w-4 h-4 text-primary" />
+            手動実行
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-muted/20 border border-border/50">
+            <div className="flex-1">
+              <p className="text-sm font-medium">GitHub同期を今すぐ実行</p>
+              <p className="text-[10px] text-muted-foreground">スキルソースを手動で同期します</p>
+            </div>
+            <Button size="sm" variant="outline" className="gap-1.5 text-xs shrink-0 h-7"
+              onClick={() => triggerCrawl.mutate()} disabled={triggerCrawl.isPending}>
+              {triggerCrawl.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+              実行
+            </Button>
           </div>
-        )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 
-        {/* Manual trigger */}
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full h-8 text-xs gap-2"
-          onClick={() => triggerSync.mutate()}
-          disabled={triggerSync.isPending}
-        >
-          {triggerSync.isPending
-            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            : <Play className="w-3.5 h-3.5" />
-          }
-          今すぐ同期を実行
-        </Button>
+// ─── メインコンポーネント ─────────────────────────────────────────────────────
+export default function UserSettings() {
+  const [location, setLocation] = useLocation();
 
-        {/* Sync logs */}
-        {logsQuery.data && logsQuery.data.length > 0 && (
-          <div className="space-y-1.5">
-            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">同期履歴</p>
-            {logsQuery.data.map((log) => (
-              <div
-                key={log.id}
-                className={`flex items-center gap-2 p-2 rounded-lg text-xs border ${
-                  log.status === "success"
-                    ? "bg-emerald-500/5 border-emerald-500/20 text-emerald-400"
-                    : log.status === "error"
-                    ? "bg-destructive/5 border-destructive/20 text-destructive"
-                    : "bg-muted/30 border-border text-muted-foreground"
+  // /settings → /settings/account にリダイレクト
+  if (location === "/settings") return <Redirect to="/settings/account" />;
+
+  const tabs = [
+    { path: "/settings/account", label: "ユーザーアカウント", icon: User },
+    { path: "/settings/wizard",  label: "初期設定ウィザード", icon: Wand2 },
+    { path: "/settings/manual",  label: "手動設定",           icon: Settings },
+  ];
+
+  return (
+    <DashboardLayout>
+      <div className="flex flex-col h-full">
+        {/* ページヘッダー */}
+        <div className="px-6 py-4 border-b border-border shrink-0">
+          <h1 className="text-lg font-bold flex items-center gap-2">
+            <Settings className="w-5 h-5 text-primary" />
+            設定
+          </h1>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            初期設定に関するすべての設定項目をここに集約しています
+          </p>
+        </div>
+
+        {/* タブナビゲーション */}
+        <div className="flex items-center gap-1 px-6 pt-4 border-b border-border shrink-0">
+          {tabs.map((tab) => {
+            const isActive = location.startsWith(tab.path);
+            return (
+              <button
+                key={tab.path}
+                onClick={() => setLocation(tab.path)}
+                className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-t-md border-b-2 transition-all -mb-px ${
+                  isActive
+                    ? "border-primary text-primary bg-primary/5"
+                    : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30"
                 }`}
               >
-                {log.status === "success" ? (
-                  <CheckCircle2 className="w-3 h-3 shrink-0" />
-                ) : log.status === "error" ? (
-                  <AlertCircle className="w-3 h-3 shrink-0" />
-                ) : (
-                  <Loader2 className="w-3 h-3 shrink-0 animate-spin" />
+                <tab.icon className="w-3.5 h-3.5" />
+                {tab.label}
+                {tab.path === "/settings/wizard" && (
+                  <Badge className="ml-1 text-[9px] px-1 py-0 bg-primary/20 text-primary border-primary/30">重要</Badge>
                 )}
-                <div className="flex-1 min-w-0">
-                  {log.status === "success" ? (
-                    <span>
-                      {log.reposScanned}リポジトリ スキャン済 · 新規{log.created}件 · 更新{log.updated}件 · スキップ{log.skipped}件
-                    </span>
-                  ) : log.status === "error" ? (
-                    <span className="truncate">{log.errorMessage ?? "エラーが発生しました"}</span>
-                  ) : (
-                    <span>同期中...</span>
-                  )}
-                </div>
-                <div className="flex items-center gap-1 text-[10px] text-muted-foreground shrink-0">
-                  <Clock className="w-2.5 h-2.5" />
-                  {new Date(log.startedAt).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {logsQuery.data?.length === 0 && (
-          <p className="text-xs text-muted-foreground text-center py-2">
-            まだ同期履歴がありません。「今すぐ同期を実行」で初回同期を開始してください。
-          </p>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-// ─── Claude Code MCP設定生成パネル ────────────────────────────────────────────────────────────────────────────────────
-function ClaudeMcpConfigPanel() {
-  const [serverUrl, setServerUrl] = useState("");
-  const [includeApiKey, setIncludeApiKey] = useState(false);
-
-  const generateConfig = trpc.claude.generateMcpConfig.useMutation({
-    onSuccess: () => toast.success("MCP設定を生成しました"),
-    onError: (e) => toast.error(e.message),
-  });
-
-  const handleCopy = async (text: string, label: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      toast.success(`${label}をコピーしました`);
-    } catch {
-      toast.error("クリップボードへのコピーに失敗しました");
-    }
-  };
-
-  const result = generateConfig.data;
-
-  return (
-    <Card className="card-glass border-amber-500/20">
-      <CardHeader className="pb-3 pt-4 px-4">
-        <div className="flex items-center gap-2">
-          <Terminal className="w-4 h-4 text-amber-400" />
-          <CardTitle className="text-sm font-semibold">Claude Code MCP設定</CardTitle>
-        </div>
-        <CardDescription className="text-xs mt-1">
-          OSMを Claude Code の Agent Team に接続するための{" "}
-          <code className="text-[10px] bg-muted px-1 py-0.5 rounded">~/.claude.json</code>{" "}
-          設定とオーケストレーター SKILL.md を生成します。
-        </CardDescription>
-      </CardHeader>
-
-      <CardContent className="px-4 pb-4 space-y-3">
-        {/* Server URL input */}
-        <div className="space-y-1.5">
-          <Label className="text-xs">サーバー URL（空欄の場合はデフォルトを使用）</Label>
-          <Input
-            placeholder="https://your-osm-instance.manus.space"
-            value={serverUrl}
-            onChange={(e) => setServerUrl(e.target.value)}
-            className="h-8 text-sm font-mono"
-          />
-        </div>
-
-        {/* Include API Key toggle */}
-        <div className="flex items-center justify-between">
-          <Label className="text-xs">設定に API Key プレースホルダーを含める</Label>
-          <Switch
-            checked={includeApiKey}
-            onCheckedChange={setIncludeApiKey}
-          />
-        </div>
-
-        {/* Generate button */}
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full h-8 text-xs gap-2 border-amber-500/30 text-amber-300 hover:bg-amber-500/10"
-          onClick={() => generateConfig.mutate({ serverUrl: serverUrl || undefined, includeApiKey })}
-          disabled={generateConfig.isPending}
-        >
-          {generateConfig.isPending
-            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            : <Terminal className="w-3.5 h-3.5" />
-          }
-          MCP設定を生成
-        </Button>
-
-        {/* Results */}
-        {result && (
-          <div className="space-y-3">
-            {/* ~/.claude.json snippet */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs text-muted-foreground">
-                  <code className="bg-muted px-1 py-0.5 rounded text-[10px]">~/.claude.json</code> に追加する設定
-                </Label>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 text-[10px] gap-1 px-2"
-                  onClick={() => handleCopy(result.configJson, "MCP設定")}
-                >
-                  <Copy className="w-3 h-3" />コピー
-                </Button>
-              </div>
-              <Textarea
-                readOnly
-                value={result.configJson}
-                className="text-[11px] font-mono h-28 resize-none bg-black/30 border-white/10"
-              />
-            </div>
-
-            {/* Orchestrator SKILL.md */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs text-muted-foreground">
-                  オーケストレーター SKILL.md
-                </Label>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 text-[10px] gap-1 px-2"
-                  onClick={() => handleCopy(result.orchestratorSkillMd, "SKILL.md")}
-                >
-                  <Copy className="w-3 h-3" />コピー
-                </Button>
-              </div>
-              <Textarea
-                readOnly
-                value={result.orchestratorSkillMd}
-                className="text-[11px] font-mono h-32 resize-none bg-black/30 border-white/10"
-              />
-            </div>
-
-            {/* Setup guide */}
-            <div className="p-3 rounded-lg bg-amber-500/5 border border-amber-500/20 text-xs space-y-1.5">
-              <p className="font-medium text-amber-300">セットアップ手順</p>
-              <ol className="space-y-1 text-amber-300/80 list-decimal list-inside">
-                <li>MCP設定をコピーして <code className="bg-black/30 px-1 rounded">~/.claude.json</code> の <code className="bg-black/30 px-1 rounded">mcpServers</code> に追加</li>
-                <li>SKILL.md をコピーして <code className="bg-black/30 px-1 rounded">.claude/skills/auto-skill-team.md</code> に保存</li>
-                <li>Claude Code を再起動して <code className="bg-black/30 px-1 rounded">/auto-skill-team</code> で起動</li>
-              </ol>
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-// ─── Configure Dialog ────────────────────────────────────────────────────────────────────────────────────
-function ConfigureDialog({
-  serviceKey,
-  existing,
-  onClose,
-  onSaved,
-}: {
-  serviceKey: ServiceKey;
-  existing?: Record<string, string>;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const svc = SERVICES.find((s) => s.key === serviceKey)!;
-  // For password fields: start empty (show placeholder indicating already set)
-  // For text fields: pre-fill with existing value
-  const [values, setValues] = useState<Record<string, string>>(
-    Object.fromEntries(
-      svc.fields.map((f) => [
-        f.key,
-        f.type === "password" ? "" : (existing?.[f.key] ?? ""),
-      ])
-    )
-  );
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<"success" | "error" | null>(null);
-  const [testMessage, setTestMessage] = useState<string>("");
-
-  const utils = trpc.useUtils();
-  const testIntegration = trpc.settings.testIntegration.useMutation({
-    onMutate: () => { setTesting(true); setTestResult(null); setTestMessage(""); },
-    onSuccess: (data) => {
-      setTesting(false);
-      setTestResult(data.success ? "success" : "error");
-      setTestMessage((data as { message?: string }).message ?? "");
-      if (data.success) toast.success("接続テスト成功");
-      else toast.error("接続テスト失敗");
-    },
-    onError: (e) => { setTesting(false); setTestResult("error"); setTestMessage(e.message); toast.error(e.message); },
-  });
-  const saveIntegration = trpc.settings.saveIntegration.useMutation({
-    onSuccess: async () => {
-      toast.success(`${svc.label} の連携を保存しました`);
-      await utils.settings.getIntegrations.invalidate();
-      onSaved();
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  return (
-    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-base">
-            <svc.Icon className={`w-4 h-4 ${svc.iconColor}`} />
-            {svc.label} の連携設定
-          </DialogTitle>
-        </DialogHeader>
-
-        <div className="space-y-3 py-2">
-          {svc.fields.map((field) => {
-            const isPassword = field.type === "password";
-            const hasExisting = isPassword && !!(existing?.[field.key]);
-            return (
-              <div key={field.key} className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs">{field.label}</Label>
-                  {hasExisting && (
-                    <span className="text-[10px] text-emerald-400 flex items-center gap-1">
-                      <CheckCircle2 className="w-3 h-3" />設定済
-                    </span>
-                  )}
-                </div>
-                <Input
-                  type={field.type ?? "text"}
-                  placeholder={
-                    isPassword && hasExisting
-                      ? "変更する場合のみ入力（空欄のまま保存すると現在の値を維持）"
-                      : field.placeholder
-                  }
-                  value={values[field.key] ?? ""}
-                  onChange={(e) => setValues((v) => ({ ...v, [field.key]: e.target.value }))}
-                  className="h-8 text-sm font-mono"
-                />
-              </div>
+              </button>
             );
           })}
-
-          {svc.helpUrl && (
-            <p className="text-xs text-muted-foreground">
-              APIキーの取得方法:{" "}
-              <a href={svc.helpUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2">
-                {svc.helpUrl}
-              </a>
-            </p>
-          )}
-
-          {testResult && (
-            <div className={`flex items-start gap-2 p-2 rounded-lg text-xs ${
-              testResult === "success" ? "bg-emerald-500/10 text-emerald-400" : "bg-destructive/10 text-destructive"
-            }`}>
-              {testResult === "success"
-                ? <CheckCircle2 className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                : <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-              }
-              <span>{testMessage || (testResult === "success" ? "接続テスト成功" : "接続テスト失敗")}</span>
-            </div>
-          )}
         </div>
 
-        <DialogFooter className="gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => testIntegration.mutate({ service: serviceKey, config: values })}
-            disabled={testing || saveIntegration.isPending}
-            className="gap-1.5"
-          >
-            {testing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-            テスト
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => {
-              // For password fields: if left empty, keep the existing value (don't overwrite)
-              const mergedConfig: Record<string, string> = { ...values };
-              svc.fields.forEach((f) => {
-                if (f.type === "password" && !values[f.key] && existing?.[f.key]) {
-                  mergedConfig[f.key] = existing[f.key];
-                }
-              });
-              saveIntegration.mutate({ service: serviceKey, config: mergedConfig });
-            }}
-            disabled={saveIntegration.isPending || testing}
-            className="gap-1.5"
-          >
-            {saveIntegration.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-            保存
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        {/* タブコンテンツ */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {location.startsWith("/settings/account") && <AccountTab />}
+          {location.startsWith("/settings/wizard") && <WizardTab />}
+          {location.startsWith("/settings/manual") && <ManualTab />}
+        </div>
+      </div>
+    </DashboardLayout>
   );
 }

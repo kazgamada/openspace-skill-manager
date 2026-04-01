@@ -313,8 +313,9 @@ export async function getDashboardStats(authorId?: number) {
 
   // Count versions by evolution type (last 24h)
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const sinceStr = since.toISOString().slice(0, 19).replace('T', ' ');
   const recentVersions = await db.select().from(skillVersions)
-    .where(sql`${skillVersions.createdAt} >= ${since}`);
+    .where(sql`${skillVersions.createdAt} >= ${sinceStr}`);
 
   const fixed = recentVersions.filter(v => v.evolutionType === "fix").length;
   const derived = recentVersions.filter(v => v.evolutionType === "derive").length;

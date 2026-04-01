@@ -153,9 +153,9 @@ function AddSourceDialog({ open, onClose }: { open: boolean; onClose: () => void
   );
 }
 
-// ─── ソース管理タブ ──────────────────────────────────────────────────────────
+// ─── ソース管理パネル（左サイドバー用コンパクト版） ────────────────────────────
 
-function SourcesTab() {
+function SourcesPanel() {
   const utils = trpc.useUtils();
   const [addOpen, setAddOpen] = useState(false);
 
@@ -192,32 +192,26 @@ function SourcesTab() {
   });
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-sm font-semibold">外部スキルソース</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            GitHub リポジトリを登録すると SKILL.md を自動取得・定期同期します
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+        <p className="text-xs text-muted-foreground">GitHubリポジトリを登録して自動同期</p>
+        <div className="flex items-center gap-1">
           <Button
-            size="sm"
+            size="icon"
             variant="outline"
-            className="gap-1.5 h-8 text-xs text-amber-400 border-amber-500/30 hover:bg-amber-500/10"
+            className="h-6 w-6 text-amber-400 border-amber-500/30 hover:bg-amber-500/10"
             onClick={() => {
-              if (confirm("タイトルと更新日時が同一の重複スキルを検出・削除します。実行しますか？")) {
+              if (confirm("重複スキルを削除しますか？")) {
                 removeDuplicatesMutation.mutate();
               }
             }}
             disabled={removeDuplicatesMutation.isPending}
+            title="重複を削除"
           >
-            {removeDuplicatesMutation.isPending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>}
-            重複を削除
+            {removeDuplicatesMutation.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>}
           </Button>
-          <Button size="sm" className="gap-1.5 h-8 text-xs" onClick={() => setAddOpen(true)}>
-            <Plus className="w-3.5 h-3.5" />
-            ソースを追加
+          <Button size="sm" className="gap-1 h-6 text-[10px]" onClick={() => setAddOpen(true)}>
+            <Plus className="w-3 h-3" />追加
           </Button>
         </div>
       </div>
@@ -653,8 +647,7 @@ export default function Community() {
   const [sortBy, setSortBy] = useState<"crawlRank" | "stars" | "downloads" | "qualityScore" | "cachedAt">("crawlRank");
   const [viewMode, setViewMode] = useViewMode("community-view-mode", "tile-lg");
   const utils = trpc.useUtils();
-  const [location, setLocation] = useLocation();
-  const isSources = location === "/community/sources";
+  const [, setLocation] = useLocation();
   const { data: integrations } = trpc.settings.getIntegrations.useQuery();
   const githubConnected = Array.isArray(integrations)
     ? integrations.some((i: { service: string; connected: boolean }) => i.service === "github" && i.connected)
@@ -687,162 +680,137 @@ export default function Community() {
 
   return (
     <DashboardLayout>
-      <div className="p-6 space-y-5 max-w-7xl mx-auto">
-        {/* GitHub Integration Banner */}
-        {!githubConnected && (
-          <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-sm">
-            <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
-            <div className="flex-1">
-              <span className="font-medium text-amber-300">GitHub未連携</span>
-              <span className="text-amber-400/80 ml-2">GitHubと連携するとプライベートリポジトリのスキルも検索・インポートできます</span>
+      <div className="flex h-full">
+        {/* ─── 左パネル: ソース管理 ─── */}
+        <div className="w-72 xl:w-80 shrink-0 flex flex-col border-r border-border bg-card/30">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+            <div className="flex items-center gap-2">
+              <Database className="w-4 h-4 text-primary" />
+              <span className="text-sm font-medium">ソース管理</span>
             </div>
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5 text-xs border-amber-500/30 text-amber-400 hover:bg-amber-500/10 shrink-0"
-              onClick={() => setLocation("/integration/github")}
-            >
-              <Github className="w-3.5 h-3.5" />連携設定
-            </Button>
           </div>
-        )}
-        {githubConnected && (
-          <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-sm">
-            <Github className="w-4 h-4 text-emerald-400 shrink-0" />
-            <div className="flex-1">
-              <span className="font-medium text-emerald-300">GitHub連携済み</span>
-              <span className="text-emerald-400/80 ml-2">プライベートリポジトリのスキルも検索・インポートできます</span>
-            </div>
-            <Badge variant="outline" className="border-emerald-500/30 text-emerald-400 bg-emerald-500/10 text-xs"><CheckCircle2 className="w-3 h-3 mr-1" />接続済み</Badge>
-          </div>
-        )}
-
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold flex items-center gap-2">
-              <Globe className="w-5 h-5 text-primary" />
-              スキル広場
-            </h1>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              GitHub全体を回遊して公開スキルを自動収集（1日100件）・パフォーマンス順に表示
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {crawlStats.data && (
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Database className="w-3.5 h-3.5" />
-                <span>{crawlStats.data.total.toLocaleString()}件収集済み</span>
-                {crawlStats.data.lastCrawledAt && (
-                  <span className="text-muted-foreground/60">・最終{formatDistanceToNow(new Date(crawlStats.data.lastCrawledAt), { addSuffix: true, locale: ja })}</span>
-                )}
+          {/* GitHub Status (compact) */}
+          <div className="px-3 pt-3 shrink-0">
+            {!githubConnected ? (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs mb-2">
+                <AlertCircle className="w-3 h-3 text-amber-400 shrink-0" />
+                <span className="text-amber-300 flex-1 text-[10px]">GitHub未連携</span>
+                <Button size="sm" variant="outline" className="h-5 text-[9px] px-1.5 border-amber-500/30 text-amber-400 hover:bg-amber-500/10 shrink-0" onClick={() => setLocation("/integration/github")}>
+                  設定
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs mb-2">
+                <Github className="w-3 h-3 text-emerald-400 shrink-0" />
+                <span className="font-medium text-emerald-300 flex-1 text-[10px]">GitHub連携済み</span>
+                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
               </div>
             )}
-            {githubConnected && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-1.5 text-xs"
-                onClick={() => triggerCrawl.mutate()}
-                disabled={triggerCrawl.isPending}
-              >
-                {triggerCrawl.isPending
-                  ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  : <RefreshCw className="w-3.5 h-3.5" />
-                }
-                今すぐクロール
-              </Button>
-            )}
+          </div>
+          <div className="flex-1 overflow-y-auto p-3">
+            <SourcesPanel />
           </div>
         </div>
 
-        {!isSources ? (
-          <div className="space-y-4">
-            {/* Search & Filter & ViewToggle */}
-            <div className="flex items-center gap-3">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") setSearch(searchInput); }}
-                  placeholder="スキルを検索... (Enterで検索)"
-                  className="pl-9 bg-input border-border"
-                />
-              </div>
-              <Button variant="outline" size="sm" onClick={() => setSearch(searchInput)} className="gap-1.5 text-xs">
-                <Search className="w-3.5 h-3.5" />
-                検索
-              </Button>
-              <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                <TrendingUp className="w-3.5 h-3.5" />
-                {skills.length} 件
-              </div>
-              {/* ソートセレクター */}
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-                className="text-xs bg-input border border-border rounded-md px-2 py-1.5 text-foreground h-8 cursor-pointer"
-              >
-                <option value="crawlRank">ランク順</option>
-                <option value="stars">スター順</option>
-                <option value="downloads">DL順</option>
-                <option value="qualityScore">品質順</option>
-                <option value="cachedAt">新着順</option>
-              </select>
-              <ViewToggle value={viewMode} onChange={setViewMode} />
+        {/* ─── 右パネル: スキル一覧 ─── */}
+        <div className="flex flex-col flex-1 min-w-0">
+          {/* Header */}
+          <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
+            <div>
+              <h1 className="text-lg font-bold flex items-center gap-2">
+                <Globe className="w-5 h-5 text-primary" />
+                スキル広場
+              </h1>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                GitHub全体を回遊して公開スキルを自動収集（1日100件）・パフォーマンス順に表示
+              </p>
             </div>
-
-            {/* Category Filter */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <Filter className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-              {CATEGORIES.map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => setCategory(cat)}
-                  className={`px-3 py-1 rounded-full text-xs font-medium border transition-all ${
-                    category === cat
-                      ? "bg-primary/15 border-primary/40 text-primary"
-                      : "bg-muted/30 border-border text-muted-foreground hover:border-border/80 hover:text-foreground"
-                  }`}
-                >
-                  {cat === "all" ? "すべて" : cat}
-                </button>
-              ))}
+            <div className="flex items-center gap-2">
+              {crawlStats.data && (
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Database className="w-3.5 h-3.5" />
+                  <span>{crawlStats.data.total.toLocaleString()}件収集済み</span>
+                  {crawlStats.data.lastCrawledAt && (
+                    <span className="text-muted-foreground/60">・最終{formatDistanceToNow(new Date(crawlStats.data.lastCrawledAt), { addSuffix: true, locale: ja })}</span>
+                  )}
+                </div>
+              )}
+              {githubConnected && (
+                <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => triggerCrawl.mutate()} disabled={triggerCrawl.isPending}>
+                  {triggerCrawl.isPending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                  今すぐクロール
+                </Button>
+              )}
             </div>
-
-            {/* Skills Grid */}
-            {communityQuery.isLoading ? (
-              <SkillsGrid viewMode={viewMode}>
-                {[...Array(viewMode === "tile-sm" ? 12 : viewMode === "list-sm" ? 8 : 6)].map((_, i) => (
-                  <div key={i} className={`rounded-xl shimmer ${viewMode === "list-sm" ? "h-10" : viewMode === "tile-sm" ? "h-32" : "h-52"}`} />
-                ))}
-              </SkillsGrid>
-            ) : skills.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-center">
-                <Globe className="w-12 h-12 text-muted-foreground/30 mb-3" />
-                <p className="text-sm text-muted-foreground">スキルが見つかりません</p>
-                <p className="text-xs text-muted-foreground/60 mt-1">
-                  「ソース管理」タブから <span className="font-mono text-primary">everything-claude-code</span> を追加してみましょう
-                </p>
-              </div>
-            ) : (
-              <SkillsGrid viewMode={viewMode}>
-                {skills.map((skill) => (
-                  <SkillCard
-                    key={skill.id}
-                    skill={skill}
-                    viewMode={viewMode}
-                    onInstall={(id) => installMutation.mutate({ communitySkillId: id })}
-                    isInstalling={installMutation.isPending}
-                  />
-                ))}
-              </SkillsGrid>
-            )}
           </div>
-        ) : (
-          <SourcesTab />
-        )}
+          {/* Skill list area */}
+          <div className="flex-1 overflow-y-auto p-5">
+            <div className="space-y-4">
+              {/* Search & Filter & ViewToggle */}
+              <div className="flex items-center gap-3">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") setSearch(searchInput); }}
+                    placeholder="スキルを検索... (Enterで検索)"
+                    className="pl-9 bg-input border-border"
+                  />
+                </div>
+                <Button variant="outline" size="sm" onClick={() => setSearch(searchInput)} className="gap-1.5 text-xs">
+                  <Search className="w-3.5 h-3.5" />検索
+                </Button>
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <TrendingUp className="w-3.5 h-3.5" />{skills.length} 件
+                </div>
+                <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)} className="text-xs bg-input border border-border rounded-md px-2 py-1.5 text-foreground h-8 cursor-pointer">
+                  <option value="crawlRank">ランク順</option>
+                  <option value="stars">スター順</option>
+                  <option value="downloads">DL順</option>
+                  <option value="qualityScore">品質順</option>
+                  <option value="cachedAt">新着順</option>
+                </select>
+                <ViewToggle value={viewMode} onChange={setViewMode} />
+              </div>
+              {/* Category Filter */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <Filter className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                {CATEGORIES.map((cat) => (
+                  <button key={cat} onClick={() => setCategory(cat)}
+                    className={`px-3 py-1 rounded-full text-xs font-medium border transition-all ${
+                      category === cat ? "bg-primary/15 border-primary/40 text-primary" : "bg-muted/30 border-border text-muted-foreground hover:border-border/80 hover:text-foreground"
+                    }`}>
+                    {cat === "all" ? "すべて" : cat}
+                  </button>
+                ))}
+              </div>
+              {/* Skills Grid */}
+              {communityQuery.isLoading ? (
+                <SkillsGrid viewMode={viewMode}>
+                  {[...Array(viewMode === "tile-sm" ? 12 : viewMode === "list-sm" ? 8 : 6)].map((_, i) => (
+                    <div key={i} className={`rounded-xl shimmer ${viewMode === "list-sm" ? "h-10" : viewMode === "tile-sm" ? "h-32" : "h-52"}`} />
+                  ))}
+                </SkillsGrid>
+              ) : skills.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 text-center">
+                  <Globe className="w-12 h-12 text-muted-foreground/30 mb-3" />
+                  <p className="text-sm text-muted-foreground">スキルが見つかりません</p>
+                  <p className="text-xs text-muted-foreground/60 mt-1">左の「ソース管理」から <span className="font-mono text-primary">everything-claude-code</span> を追加してみましょう</p>
+                </div>
+              ) : (
+                <SkillsGrid viewMode={viewMode}>
+                  {skills.map((skill) => (
+                    <SkillCard key={skill.id} skill={skill} viewMode={viewMode}
+                      onInstall={(id) => installMutation.mutate({ communitySkillId: id })}
+                      isInstalling={installMutation.isPending}
+                    />
+                  ))}
+                </SkillsGrid>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
     </DashboardLayout>
   );

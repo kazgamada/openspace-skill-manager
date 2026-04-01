@@ -713,7 +713,8 @@ const dashboardRouter = router({
   stats: protectedProcedure.query(async ({ ctx }) => {
     const isAdmin = ctx.user.role === "admin";
     const authorId = isAdmin ? undefined : ctx.user.id;
-    const base = await getDashboardStats(authorId);
+    const baseRaw = await getDashboardStats(authorId);
+    const base = baseRaw ?? { totalSkills: 0, fixed: 0, derived: 0, captured: 0, recentLogs: [] };
     // 追加統計: GitHub同期ログ・ソース数・コミュニティスキル数・品質スコア
     const db = await getDb();
     let githubLastSync: Date | null = null;
@@ -757,12 +758,13 @@ const dashboardRouter = router({
         };
       }
       // 未処理の進化提案数
-      const pool = (db as any).$client;
-      const [evRows] = await pool.execute(
-        `SELECT COUNT(*) as cnt FROM skill_evolution_proposals WHERE userId = ? AND status = 'pending'`,
-        [ctx.user.id]
-      );
-      pendingEvolutions = (evRows as Array<{ cnt: number }>)[0]?.cnt ?? 0;
+      try {
+        const evResult = await db.execute(
+          sql`SELECT COUNT(*) as cnt FROM skill_evolution_proposals WHERE userId = ${ctx.user.id} AND status = 'pending'`
+        );
+        const evRows = (Array.isArray(evResult) ? evResult[0] : evResult) as unknown as Array<{ cnt: number }>;
+        pendingEvolutions = (Array.isArray(evRows) ? evRows[0]?.cnt : (evRows as any)?.cnt) ?? 0;
+      } catch { pendingEvolutions = 0; }
     }
     return {
       ...base,
@@ -2052,56 +2054,33 @@ const monitorRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      const pool = (db as any).$client;
+      if (!db) throw new Error("DB not available");
       const userId = ctx.user.id;
       const sessionId = input.sessionId ?? generateSessionId();
 
       // セッションをupsert
       const patterns = detectPatterns(input.activities as ActivityEntry[]);
-      await pool.execute(
-        `INSERT INTO claude_monitor_sessions (id, userId, sessionLabel, activityLog, detectedPatterns, lastActivityAt)
-         VALUES (?, ?, ?, ?, ?, NOW())
+      await db.execute(
+        sql`INSERT INTO claude_monitor_sessions (id, userId, sessionLabel, activityLog, detectedPatterns, lastActivityAt)
+         VALUES (${sessionId}, ${userId}, ${input.sessionLabel ?? null}, ${JSON.stringify(input.activities)}, ${JSON.stringify(patterns)}, NOW())
          ON DUPLICATE KEY UPDATE
            activityLog = VALUES(activityLog),
            detectedPatterns = VALUES(detectedPatterns),
-           lastActivityAt = NOW()`,
-        [
-          sessionId,
-          userId,
-          input.sessionLabel ?? null,
-          JSON.stringify(input.activities),
-          JSON.stringify(patterns),
-        ]
+           lastActivityAt = NOW()`
       );
-
       // コミュニティスキルを取得してLLMで提案生成
-      const communitySkills = await getCommunitySkills({ limit: 50, offset: 0 });
+      const communitySkillsList = await getCommunitySkills({ limit: 50, offset: 0 });
       const suggestions = await generateSkillSuggestions(
         patterns,
-        communitySkills.map((s) => ({ id: s.id, name: s.name, description: s.description, tags: s.tags }))
+        communitySkillsList.map((s) => ({ id: s.id, name: s.name, description: s.description, tags: s.tags }))
       );
-
       // 既存のpending提案を削除して新しい提案を保存
-      await pool.execute(
-        `DELETE FROM skill_suggestions WHERE userId = ? AND status = 'pending'`,
-        [userId]
-      );
-
+      await db.execute(sql`DELETE FROM skill_suggestions WHERE userId = ${userId} AND status = 'pending'`);
       for (const sug of suggestions) {
-        await pool.execute(
-          `INSERT INTO skill_suggestions (id, userId, sessionId, skillId, skillName, skillDescription, reason, source, confidence)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            generateSuggestionId(),
-            userId,
-            sessionId,
-            sug.matchedSkillId ?? null,
-            sug.skillName,
-            sug.skillDescription,
-            sug.reason,
-            sug.source,
-            sug.confidence,
-          ]
+        const sugId = generateSuggestionId();
+        await db.execute(
+          sql`INSERT INTO skill_suggestions (id, userId, sessionId, skillId, skillName, skillDescription, reason, source, confidence)
+           VALUES (${sugId}, ${userId}, ${sessionId}, ${sug.matchedSkillId ?? null}, ${sug.skillName}, ${sug.skillDescription}, ${sug.reason}, ${sug.source}, ${sug.confidence})`
         );
       }
 
@@ -2111,15 +2090,15 @@ const monitorRouter = router({
   // 提案スキル一覧を取得
   getSuggestions: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
-    const pool = (db as any).$client;
-    const [rows] = await pool.execute(
-      `SELECT * FROM skill_suggestions WHERE userId = ? AND status = 'pending' ORDER BY confidence DESC LIMIT 20`,
-      [ctx.user.id]
+    if (!db) return [];
+    const result = await db.execute(
+      sql`SELECT * FROM skill_suggestions WHERE userId = ${ctx.user.id} AND status = 'pending' ORDER BY confidence DESC LIMIT 20`
     );
-    return rows as Array<{
+    const rows = (Array.isArray(result) ? result[0] : result) as unknown as Array<{
       id: string; skillId: string | null; skillName: string; skillDescription: string;
       reason: string; source: string; confidence: number; createdAt: Date;
     }>;
+    return Array.isArray(rows) ? rows : [];
   }),
 
   // 提案を却下
@@ -2127,11 +2106,8 @@ const monitorRouter = router({
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      const pool = (db as any).$client;
-      await pool.execute(
-        `UPDATE skill_suggestions SET status = 'dismissed' WHERE id = ? AND userId = ?`,
-        [input.id, ctx.user.id]
-      );
+      if (!db) return { success: false };
+      await db.execute(sql`UPDATE skill_suggestions SET status = 'dismissed' WHERE id = ${input.id} AND userId = ${ctx.user.id}`);
       return { success: true };
     }),
 
@@ -2140,12 +2116,12 @@ const monitorRouter = router({
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      const pool = (db as any).$client;
-      const [rows] = await pool.execute(
-        `SELECT * FROM skill_suggestions WHERE id = ? AND userId = ?`,
-        [input.id, ctx.user.id]
+      if (!db) throw new Error("DB not available");
+      const result = await db.execute(
+        sql`SELECT * FROM skill_suggestions WHERE id = ${input.id} AND userId = ${ctx.user.id}`
       );
-      const sug = (rows as Array<{ skillId: string | null; skillName: string; skillDescription: string; source: string }>)[0];
+      const rows = (Array.isArray(result) ? result[0] : result) as unknown as Array<{ skillId: string | null; skillName: string; skillDescription: string; source: string }>;
+      const sug = Array.isArray(rows) ? rows[0] : undefined;
       if (!sug) throw new Error("提案が見つかりません");
 
       // コミュニティスキルからインポートする場合
@@ -2171,27 +2147,24 @@ const monitorRouter = router({
         }
       }
 
-      await pool.execute(
-        `UPDATE skill_suggestions SET status = 'installed' WHERE id = ? AND userId = ?`,
-        [input.id, ctx.user.id]
-      );
+      await db.execute(sql`UPDATE skill_suggestions SET status = 'installed' WHERE id = ${input.id} AND userId = ${ctx.user.id}`);
       return { success: true };
     }),
 
   // 最近のセッション一覧
   getRecentSessions: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
-    const pool = (db as any).$client;
-    const [rows] = await pool.execute(
-      `SELECT id, sessionLabel, detectedPatterns, lastActivityAt, createdAt
-       FROM claude_monitor_sessions WHERE userId = ?
-       ORDER BY lastActivityAt DESC LIMIT 10`,
-      [ctx.user.id]
+    if (!db) return [];
+    const result = await db.execute(
+      sql`SELECT id, sessionLabel, detectedPatterns, lastActivityAt, createdAt
+       FROM claude_monitor_sessions WHERE userId = ${ctx.user.id}
+       ORDER BY lastActivityAt DESC LIMIT 10`
     );
-    return (rows as Array<{
+    const rows = (Array.isArray(result) ? result[0] : result) as unknown as Array<{
       id: string; sessionLabel: string | null; detectedPatterns: string | null;
       lastActivityAt: Date; createdAt: Date;
-    }>).map((r) => ({
+    }>;
+    return (Array.isArray(rows) ? rows : []).map((r) => ({
       ...r,
       detectedPatterns: r.detectedPatterns ? JSON.parse(r.detectedPatterns) : null,
     }));

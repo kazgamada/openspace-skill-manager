@@ -248,3 +248,17 @@
 - [x] DBスキーマ: skills テーブルに badge カラム（new/repaired/derived/null）を追加・ALTER TABLE完了
 - [x] evolution.getProposals等のpool.promise()エラーを$client直接使用に修正
 - [x] 社内説明ドキュメント v3: ダッシュボード設計・修復派生の仕組み・バッジ仕様を追記
+
+## v4設計方針 UI実装
+- [x] DashboardLayout: メニューを5本に単純化（ダッシュボード・マイスキル・スキル広場・設定・管理者パネル）
+- [x] DashboardLayout: Agent連携・Codeモニター・スキル系譜・ヘルスモニターのサブメニューを廃止
+- [x] DashboardLayout: 設定サブメニューを「ユーザーアカウント・初期設定ウィザード・手動設定」の3項目に変更
+- [x] DashboardLayout: 管理者パネルのサブメニューを「ユーザー管理・プラン管理・収益ダッシュボード」の3項目に変更
+- [x] App.tsx: 廃止ページのルートを削除・新ルートを追加（/settings/wizard・/settings/manual・/settings/account・/admin/plans・/admin/revenue）
+- [x] MySkills.tsx: 左2/3スキル一覧＋右1/3系譜グラフの統合レイアウトに刷新（ヘルスモニタータブ廃止）
+- [x] MySkills.tsx: スキル選択時に右パネルの系譜グラフを更新・ヘルス情報をインライン表示
+- [x] Community.tsx: 左パネル（ソース一覧＋手動追加ボタン）＋右パネル（スキル一覧）の統合レイアウトに刷新
+- [x] UserSettings.tsx: 3サブページ構成に刷新（ユーザーアカウント・初期設定ウィザード・手動設定）
+- [x] UserSettings.tsx: 初期設定ウィザード（5ステップ・修復派生説明込み・行き来可能）を実装
+- [x] UserSettings.tsx: 手動設定ページに既存の連携設定をコンパクトに集約
+- [x] AdminSettings.tsx: プラン管理・収益ダッシュボードのサブページを追加

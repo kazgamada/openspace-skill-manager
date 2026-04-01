@@ -9,35 +9,29 @@ import Dashboard from "./pages/Dashboard";
 import MySkills from "./pages/MySkills";
 import SkillDetail from "./pages/SkillDetail";
 import Community from "./pages/Community";
-import Genealogy from "./pages/Genealogy";
 import AdminSettings from "./pages/AdminSettings";
 import UserSettings from "./pages/UserSettings";
-import ClaudeIntegration from "./pages/ClaudeIntegration";
-import ClaudeMonitor from "./pages/ClaudeMonitor";
 
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Home} />
+      <Route path="/" component={Dashboard} />
       <Route path="/dashboard" component={Dashboard} />
+      {/* マイスキル */}
       <Route path="/skills" component={MySkills} />
-      <Route path="/skills/health" component={MySkills} />
       <Route path="/skills/:id" component={SkillDetail} />
+      {/* スキル広場 */}
       <Route path="/community" component={Community} />
-      <Route path="/community/sources" component={Community} />
-      <Route path="/genealogy" component={Genealogy} />
-      <Route path="/genealogy/:skillId" component={Genealogy} />
-      {/* Admin routes */}
-      <Route path="/admin" component={AdminSettings} />
-      <Route path="/admin/account" component={AdminSettings} />
-      <Route path="/admin/users" component={AdminSettings} />
-      <Route path="/admin/system" component={AdminSettings} />
-      {/* User settings routes */}
+      {/* 設定（v4: 3サブページ） */}
       <Route path="/settings" component={UserSettings} />
-      <Route path="/settings/integrations" component={UserSettings} />
-      <Route path="/claude" component={ClaudeIntegration} />
-      <Route path="/claude/:tab" component={ClaudeIntegration} />
-      <Route path="/monitor" component={ClaudeMonitor} />
+      <Route path="/settings/account" component={UserSettings} />
+      <Route path="/settings/wizard" component={UserSettings} />
+      <Route path="/settings/manual" component={UserSettings} />
+      {/* 管理者パネル（v4: 3サブページ） */}
+      <Route path="/admin" component={AdminSettings} />
+      <Route path="/admin/users" component={AdminSettings} />
+      <Route path="/admin/plans" component={AdminSettings} />
+      <Route path="/admin/revenue" component={AdminSettings} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

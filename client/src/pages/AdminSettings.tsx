@@ -1,14 +1,14 @@
 /**
- * AdminSettings.tsx
- * 管理者パネル — URLパス連動型（上部タブなし）
+ * AdminSettings.tsx — v4設計
+ * 管理者パネル（3サブページ）
  *
- * /admin/account  → アカウント（プロフィール + 通知 + 外観 統合）
- * /admin/users    → ユーザー管理
- * /admin/system   → システム設定・ログ監視
- * /admin          → /admin/account へリダイレクト
+ * /admin/users    → ユーザー・ロール管理
+ * /admin/plans    → プラン管理
+ * /admin/revenue  → 収益ダッシュボード
+ * /admin          → /admin/users へリダイレクト
  */
-import { useState, useEffect } from "react";
-import { useLocation, useRoute, Redirect } from "wouter";
+import { useState } from "react";
+import { useRoute, Redirect } from "wouter";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
@@ -17,34 +17,30 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import {
-  Activity, AlertCircle, Bell, CheckCircle2, Cpu, Database,
-  Eye, EyeOff, FileText, FolderOpen, HardDrive, Loader2,
-  LogOut, Moon, Palette, Save, Search, Settings, Shield,
-  Sun, Trash2, User, UserCircle, Users, Zap,
+  Activity, AlertCircle, CheckCircle2,
+  DollarSign, Loader2, Search, Settings, Shield,
+  TrendingUp, Users, Zap,
 } from "lucide-react";
 
 // ─── Route detection ──────────────────────────────────────────────────────────
-type AdminSection = "account" | "users" | "system";
+type AdminSection = "users" | "plans" | "revenue";
 
 function useAdminSection(): AdminSection {
-  const [onAccount] = useRoute("/admin/account");
   const [onUsers]   = useRoute("/admin/users");
-  const [onSystem]  = useRoute("/admin/system");
-  if (onUsers)  return "users";
-  if (onSystem) return "system";
-  return "account"; // /admin も account 扱い
+  const [onPlans]   = useRoute("/admin/plans");
+  const [onRevenue] = useRoute("/admin/revenue");
+  if (onPlans)   return "plans";
+  if (onRevenue) return "revenue";
+  return "users"; // /admin も users 扱い
 }
 
 // ─── Section title/icon map ───────────────────────────────────────────────────
 const SECTION_META: Record<AdminSection, { title: string; desc: string; Icon: React.ElementType }> = {
-  account: { title: "アカウント設定", desc: "プロフィール・通知・外観の設定", Icon: UserCircle },
-  users:   { title: "ユーザー管理",   desc: "登録ユーザーの管理と権限設定",   Icon: Users },
-  system:  { title: "システム設定",   desc: "システム監視・ログ・メンテナンス", Icon: Cpu },
+  users:   { title: "ユーザー・ロール管理", desc: "登録ユーザーの管理と権限設定",   Icon: Users },
+  plans:   { title: "プラン管理",           desc: "サブスクリプションプランの管理", Icon: Settings },
+  revenue: { title: "収益ダッシュボード",   desc: "収益・課金状況の概要",           Icon: TrendingUp },
 };
 
 // ─── Root component ───────────────────────────────────────────────────────────
@@ -63,8 +59,8 @@ export default function AdminSettings() {
     );
   }
 
-  // /admin → /admin/account へリダイレクト
-  if (onAdmin) return <Redirect to="/admin/account" />;
+  // /admin → /admin/users へリダイレクト
+  if (onAdmin) return <Redirect to="/admin/users" />;
 
   if (user?.role !== "admin") {
     return (
@@ -85,7 +81,7 @@ export default function AdminSettings() {
         {/* Page header */}
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/30 flex items-center justify-center">
-            <Icon className="w-4.5 h-4.5 text-primary" />
+            <Icon className="w-4 h-4 text-primary" />
           </div>
           <div>
             <h1 className="text-lg font-bold">{title}</h1>
@@ -96,171 +92,11 @@ export default function AdminSettings() {
           </Badge>
         </div>
 
-        {section === "account" && <AccountSection />}
         {section === "users"   && <UsersSection />}
-        {section === "system"  && <SystemSection />}
+        {section === "plans"   && <PlansSection />}
+        {section === "revenue" && <RevenueSection />}
       </div>
     </DashboardLayout>
-  );
-}
-
-// ─── Account Section ──────────────────────────────────────────────────────────
-// プロフィール + 通知 + 外観 を1画面に統合
-function AccountSection() {
-  const { user, logout } = useAuth();
-  const [displayName, setDisplayName] = useState(user?.name ?? "");
-
-  const prefQuery = trpc.settings.getPreferences.useQuery();
-  const updatePref = trpc.settings.updatePreferences.useMutation({
-    onSuccess: () => toast.success("設定を保存しました"),
-    onError: (e) => toast.error(e.message),
-  });
-  const updateAccount = trpc.settings.update.useMutation({
-    onSuccess: () => toast.success("アカウント情報を更新しました"),
-    onError: (e) => toast.error(e.message),
-  });
-
-  const prefs = prefQuery.data;
-
-  return (
-    <div className="space-y-5">
-      {/* ── プロフィール ── */}
-      <Card className="card-glass">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <User className="w-4 h-4 text-primary" />プロフィール
-          </CardTitle>
-          <CardDescription className="text-xs">表示名・メールアドレスを管理します</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center gap-4">
-            <div className="h-14 w-14 rounded-full bg-gradient-to-br from-primary/40 to-primary/10 border border-primary/20 flex items-center justify-center text-xl font-bold text-primary shrink-0">
-              {(user?.name ?? "U")[0].toUpperCase()}
-            </div>
-            <div className="min-w-0">
-              <p className="font-semibold truncate">{user?.name ?? "未設定"}</p>
-              <p className="text-sm text-muted-foreground truncate">{user?.email}</p>
-              <Badge variant="outline" className="mt-1 text-xs border-primary/40 text-primary">
-                <Shield className="w-3 h-3 mr-1" />管理者
-              </Badge>
-            </div>
-          </div>
-          <Separator />
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs">表示名</Label>
-              <Input
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="表示名を入力"
-                className="h-8 text-sm"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">メールアドレス</Label>
-              <Input value={user?.email ?? ""} disabled className="h-8 text-sm opacity-60" />
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              onClick={() => updateAccount.mutate({ displayName })}
-              disabled={updateAccount.isPending}
-              className="gap-1.5"
-            >
-              {updateAccount.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-              保存
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={logout}
-              className="gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10"
-            >
-              <LogOut className="w-3.5 h-3.5" />ログアウト
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* ── 外観 ── */}
-      <Card className="card-glass">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <Palette className="w-4 h-4 text-primary" />外観
-          </CardTitle>
-          <CardDescription className="text-xs">テーマ・言語を設定します</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label className="text-xs">テーマ</Label>
-            <div className="grid grid-cols-3 gap-3">
-              {[
-                { value: "dark",   label: "ダーク",    Icon: Moon,     preview: "bg-zinc-900 border-zinc-700" },
-                { value: "light",  label: "ライト",    Icon: Sun,      preview: "bg-white border-zinc-200" },
-                { value: "system", label: "システム",  Icon: Settings, preview: "bg-gradient-to-r from-zinc-900 to-white border-zinc-400" },
-              ].map((t) => (
-                <button
-                  key={t.value}
-                  onClick={() => updatePref.mutate({ theme: t.value })}
-                  className={`p-3 rounded-xl border-2 text-center transition-all ${
-                    (prefs?.theme ?? "dark") === t.value
-                      ? "border-primary bg-primary/10"
-                      : "border-border hover:border-primary/50"
-                  }`}
-                >
-                  <div className={`h-7 w-full rounded-md mb-2 border ${t.preview}`} />
-                  <span className="text-xs font-medium">{t.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label className="text-xs">言語</Label>
-            <Select
-              value={prefs?.language ?? "ja"}
-              onValueChange={(v) => updatePref.mutate({ language: v })}
-            >
-              <SelectTrigger className="w-40 h-8 text-sm"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ja">日本語</SelectItem>
-                <SelectItem value="en">English</SelectItem>
-                <SelectItem value="zh">中文</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* ── 通知 ── */}
-      <Card className="card-glass">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <Bell className="w-4 h-4 text-primary" />通知設定
-          </CardTitle>
-          <CardDescription className="text-xs">どのイベントで通知を受け取るか設定します</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {[
-            { key: "notifyOnRepair",      label: "自動修復通知",     desc: "スキルが自動修復されたときに通知" },
-            { key: "notifyOnDegradation", label: "品質劣化アラート", desc: "品質スコアが閾値を下回ったときに通知" },
-            { key: "notifyOnCommunity",   label: "コミュニティ更新", desc: "フォロー中のスキルが更新されたときに通知" },
-            { key: "emailDigest",         label: "メールダイジェスト", desc: "週次サマリーをメールで受け取る" },
-          ].map(({ key, label, desc }) => (
-            <div key={key} className="flex items-center justify-between py-1">
-              <div>
-                <p className="text-sm font-medium">{label}</p>
-                <p className="text-xs text-muted-foreground">{desc}</p>
-              </div>
-              <Switch
-                checked={(prefs as Record<string, boolean> | undefined)?.[key] ?? false}
-                onCheckedChange={(v) => updatePref.mutate({ [key]: v })}
-              />
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-    </div>
   );
 }
 
@@ -280,6 +116,23 @@ function UsersSection() {
 
   return (
     <div className="space-y-4">
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { label: "総ユーザー数",  value: usersQuery.data?.length ?? "—",                                                      Icon: Users,    color: "text-primary" },
+          { label: "管理者数",      value: (usersQuery.data ?? []).filter((u) => u.role === "admin").length || "—",             Icon: Shield,   color: "text-amber-400" },
+          { label: "一般ユーザー数", value: (usersQuery.data ?? []).filter((u) => u.role !== "admin").length || "—",            Icon: Activity, color: "text-emerald-400" },
+        ].map(({ label, value, Icon, color }) => (
+          <Card key={label} className="bg-card border-border">
+            <CardContent className="p-4 flex flex-col gap-1">
+              <Icon className={`w-4 h-4 ${color}`} />
+              <p className="text-xl font-bold">{value}</p>
+              <p className="text-xs text-muted-foreground">{label}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
       {/* Search */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -292,7 +145,7 @@ function UsersSection() {
       </div>
 
       {/* User list */}
-      <Card className="card-glass">
+      <Card className="bg-card border-border">
         <CardContent className="p-0">
           {usersQuery.isLoading ? (
             <div className="flex items-center justify-center py-12">
@@ -351,153 +204,156 @@ function UsersSection() {
   );
 }
 
-// ─── System Section ───────────────────────────────────────────────────────────
-function SystemSection() {
-  const [showLogs, setShowLogs] = useState(false);
-  const logsQuery  = trpc.admin.systemLogs.useQuery(undefined, { enabled: showLogs });
+// ─── Plans Section ────────────────────────────────────────────────────────────
+const PLAN_DEFS = [
+  {
+    key: "free",
+    name: "Free",
+    price: "¥0",
+    period: "/月",
+    color: "border-border",
+    badgeClass: "bg-muted/30 text-muted-foreground border-border",
+    features: ["スキル管理（最大20件）", "スキル広場の閲覧", "手動同期（月5回）"],
+    limits: "スキル数上限: 20件 / 自動修復: 無効",
+  },
+  {
+    key: "pro",
+    name: "Pro",
+    price: "¥1,980",
+    period: "/月",
+    color: "border-primary/40",
+    badgeClass: "bg-primary/15 text-primary border-primary/40",
+    features: ["スキル管理（無制限）", "自動同期（6時間ごと）", "自動修復（月20回）", "進化提案（月10件）"],
+    limits: "自動修復: 月20回 / 進化提案: 月10件",
+  },
+  {
+    key: "team",
+    name: "Team",
+    price: "¥4,980",
+    period: "/月",
+    color: "border-amber-500/40",
+    badgeClass: "bg-amber-500/15 text-amber-400 border-amber-500/40",
+    features: ["Proの全機能", "チームメンバー5名まで", "自動修復（無制限）", "進化提案（無制限）", "優先サポート"],
+    limits: "自動修復: 無制限 / 進化提案: 無制限",
+  },
+];
+
+function PlansSection() {
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/20 border border-border text-xs text-muted-foreground">
+        <AlertCircle className="w-4 h-4 shrink-0" />
+        <p>プランの価格・機能制限はここで確認できます。Stripe連携による課金管理は今後実装予定です。</p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4">
+        {PLAN_DEFS.map((plan) => (
+          <Card key={plan.key} className={`bg-card border-2 ${plan.color}`}>
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Badge className={`text-xs ${plan.badgeClass}`}>{plan.name}</Badge>
+                    <span className="text-lg font-bold">{plan.price}</span>
+                    <span className="text-xs text-muted-foreground">{plan.period}</span>
+                  </div>
+                  <ul className="space-y-1 mb-3">
+                    {plan.features.map((f) => (
+                      <li key={f} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-[10px] text-muted-foreground/60 font-mono">{plan.limits}</p>
+                </div>
+                <Button size="sm" variant="outline" className="text-xs shrink-0 h-8"
+                  onClick={() => toast.info("プラン編集機能は準備中です")}>
+                  編集
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Revenue Section ──────────────────────────────────────────────────────────
+function RevenueSection() {
+  const usersQuery = trpc.admin.users.useQuery();
   const skillsQuery = trpc.admin.allSkills.useQuery();
-  const usersQuery  = trpc.admin.users.useQuery();
-  const seedData = trpc.admin.seedData.useMutation({
-    onSuccess: () => toast.success("デモデータを投入しました"),
-    onError: (e) => toast.error(e.message),
-  });
+
+  // ダミー収益データ（Stripe未連携のため）
+  const dummyMetrics = [
+    { label: "今月の収益",     value: "¥—",    sub: "Stripe未連携",    Icon: DollarSign, color: "text-emerald-400" },
+    { label: "有料プラン数",   value: "—",     sub: "Stripe未連携",    Icon: TrendingUp, color: "text-primary" },
+    { label: "総スキル数",     value: skillsQuery.data?.length ?? "—", sub: "全ユーザー合計", Icon: Zap, color: "text-amber-400" },
+    { label: "登録ユーザー数", value: usersQuery.data?.length ?? "—",  sub: "累計",          Icon: Users, color: "text-blue-400" },
+  ];
 
   return (
     <div className="space-y-5">
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-3">
-        {[
-          { label: "総スキル数",    value: skillsQuery.data?.length ?? "—", Icon: Zap,      color: "text-primary" },
-          { label: "登録ユーザー数", value: usersQuery.data?.length ?? "—",  Icon: Users,    color: "text-blue-400" },
-          { label: "実行ログ数",    value: logsQuery.data?.length ?? "—",   Icon: Activity, color: "text-emerald-400" },
-        ].map(({ label, value, Icon, color }) => (
-          <Card key={label} className="card-glass">
-            <CardContent className="p-4 flex flex-col gap-1">
-              <Icon className={`w-4 h-4 ${color}`} />
-              <p className="text-xl font-bold">{value}</p>
-              <p className="text-xs text-muted-foreground">{label}</p>
+      <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-400">
+        <AlertCircle className="w-4 h-4 shrink-0" />
+        <p>収益データはStripe連携後に自動表示されます。現在はシステム統計のみ表示しています。</p>
+      </div>
+
+      {/* Metrics grid */}
+      <div className="grid grid-cols-2 gap-3">
+        {dummyMetrics.map(({ label, value, sub, Icon, color }) => (
+          <Card key={label} className="bg-card border-border">
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs text-muted-foreground">{label}</p>
+                  <p className="text-2xl font-bold mt-1">{value}</p>
+                  <p className="text-[10px] text-muted-foreground/60 mt-0.5">{sub}</p>
+                </div>
+                <div className="w-8 h-8 rounded-lg bg-muted/30 flex items-center justify-center">
+                  <Icon className={`w-4 h-4 ${color}`} />
+                </div>
+              </div>
             </CardContent>
           </Card>
         ))}
       </div>
 
-      {/* Maintenance */}
-      <Card className="card-glass">
+      {/* Stripe連携案内 */}
+      <Card className="bg-card border-border">
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <Settings className="w-4 h-4 text-primary" />メンテナンス
+          <CardTitle className="text-sm flex items-center gap-2">
+            <DollarSign className="w-4 h-4 text-primary" />
+            Stripe連携
           </CardTitle>
+          <CardDescription className="text-xs">
+            課金・サブスクリプション管理にはStripe連携が必要です
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="flex items-center justify-between py-2 border-b border-border">
-            <div>
-              <p className="text-sm font-medium">デモデータ投入</p>
-              <p className="text-xs text-muted-foreground">サンプルスキルと実行ログを生成します</p>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => seedData.mutate()}
-              disabled={seedData.isPending}
-              className="h-8 text-xs gap-1.5"
-            >
-              {seedData.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
-              投入
-            </Button>
-          </div>
-          <div className="flex items-center justify-between py-2">
-            <div>
-              <p className="text-sm font-medium">システムログ</p>
-              <p className="text-xs text-muted-foreground">最近のシステムイベントを表示します</p>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowLogs((v) => !v)}
-              className="h-8 text-xs gap-1.5"
-            >
-              {showLogs ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-              {showLogs ? "非表示" : "表示"}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Logs */}
-      {showLogs && (
-        <Card className="card-glass">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <Activity className="w-4 h-4 text-primary" />実行ログ（直近）
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {logsQuery.isLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+          <div className="space-y-2">
+            {[
+              { label: "月次収益グラフ",     desc: "MRR・ARRのトレンド表示" },
+              { label: "プラン別ユーザー数", desc: "Free/Pro/Teamの分布" },
+              { label: "チャーン率",         desc: "解約率・継続率の追跡" },
+              { label: "請求書管理",         desc: "Stripeダッシュボードへのリンク" },
+            ].map(({ label, desc }) => (
+              <div key={label} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-muted/20 border border-border/50">
+                <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 shrink-0" />
+                <div>
+                  <p className="text-xs font-medium">{label}</p>
+                  <p className="text-[10px] text-muted-foreground">{desc}</p>
+                </div>
+                <Badge variant="outline" className="ml-auto text-[9px] text-muted-foreground shrink-0">準備中</Badge>
               </div>
-            ) : (
-              <div className="space-y-1 max-h-80 overflow-y-auto font-mono text-xs">
-                {(logsQuery.data ?? []).length === 0 ? (
-                  <p className="text-center py-4 text-muted-foreground">ログがありません</p>
-                ) : (
-                  (logsQuery.data ?? []).map((log) => (
-                    <div
-                      key={log.id}
-                      className={`flex items-start gap-2 px-2 py-1.5 rounded ${
-                        log.status === "success" ? "bg-emerald-500/5" : "bg-destructive/5"
-                      }`}
-                    >
-                      {log.status === "success"
-                        ? <CheckCircle2 className="w-3 h-3 text-emerald-400 mt-0.5 shrink-0" />
-                        : <AlertCircle className="w-3 h-3 text-destructive mt-0.5 shrink-0" />
-                      }
-                      <div className="flex-1 min-w-0">
-                        <span className="text-muted-foreground">
-                          {new Date(log.executedAt).toLocaleString("ja-JP")}{" "}
-                        </span>
-                        <span className="text-foreground/80">
-                          Skill#{log.skillId}
-                        </span>
-                        {log.errorMessage && (
-                          <p className="text-destructive/80 truncate">{log.errorMessage}</p>
-                        )}
-                      </div>
-                      <span className="text-muted-foreground/60 shrink-0">
-                        {log.executionTime != null ? `${log.executionTime.toFixed(2)}s` : ""}
-                      </span>
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Danger zone */}
-      <Card className="card-glass border-destructive/20">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold flex items-center gap-2 text-destructive">
-            <AlertCircle className="w-4 h-4" />危険な操作
-          </CardTitle>
-          <CardDescription className="text-xs">これらの操作は元に戻せません</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">全ログを削除</p>
-              <p className="text-xs text-muted-foreground">全ての実行ログを完全に削除します</p>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 text-xs gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10"
-              onClick={() => toast.error("この操作は現在無効化されています")}
-            >
-              <Trash2 className="w-3.5 h-3.5" />削除
-            </Button>
+            ))}
           </div>
+          <Button size="sm" variant="outline" className="w-full text-xs gap-1.5 h-8"
+            onClick={() => toast.info("Stripe連携の設定は管理者にお問い合わせください")}>
+            <DollarSign className="w-3.5 h-3.5" />
+            Stripe連携を設定する
+          </Button>
         </CardContent>
       </Card>
     </div>

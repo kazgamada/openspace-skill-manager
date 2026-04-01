@@ -252,43 +252,22 @@ function MenuItemWithManual({
   );
 }
 
-// ─── Navigation structure ───────────────────────────────────────────────────
+// ─── Navigation structure (v4: 5本メニュー) ─────────────────────────────────
+// v4設計方针: ダッシュボード・マイスキル・スキル広場・設定・管理者パネル
+// Agent連携・ Codeモニター・スキル系譜(サイドバー)は廃止
 
-// マイスキルのサブメニュー
-const mySkillsSubItems = [
-  { icon: Brain,    label: "スキル一覧",     path: "/skills" },
-  { icon: Activity, label: "ヘルスモニター", path: "/skills/health" },
-];
-
-// スキル広場のサブメニュー
-const communitySubItems = [
-  { icon: Store,    label: "スキル一覧",   path: "/community" },
-  { icon: Database, label: "ソース管理",   path: "/community/sources" },
-];
-
-// Agent連携のサブメニュー
-const claudeSubItems = [
-  { icon: Github,    label: "GitHub取得",   path: "/claude/github" },
-  { icon: GitMerge,  label: "AIマージ",     path: "/claude/merge" },
-  { icon: GitBranch, label: "差分インポート", path: "/claude/diff" },
-  { icon: Tag,       label: "自動タグ付け", path: "/claude/tags" },
-  { icon: Upload,    label: "単体インポート", path: "/claude/single" },
-  { icon: Sparkles,  label: "スマート起動", path: "/claude/smart" },
-  { icon: Wand2,     label: "MCP設定",      path: "/claude/mcp" },
-];
-
-// モニターのサブメニュー（なし: 直接リンク）
-
-// ユーザー用「設定」サブメニュー
+// 設定サブメニュー（v4: ユーザーアカウント・初期設定ウィザード・手動設定）
 const userSettingsSubItems = [
-  { icon: Link2, label: "連携", path: "/settings/integrations" },
+  { icon: UserCircle, label: "ユーザーアカウント", path: "/settings/account" },
+  { icon: Wand2,      label: "初期設定ウィザード", path: "/settings/wizard" },
+  { icon: Cpu,        label: "手動設定",           path: "/settings/manual" },
 ];
 
-// 管理者パネルのサブメニュー
+// 管理者パネルサブメニュー（v4: ユーザー情報・ロール管理・プラン管理・収益ダッシュボード）
 const adminSubItems = [
-  { icon: UserCircle, label: "アカウント",   path: "/admin/account" },
-  { icon: Users,      label: "ユーザー管理", path: "/admin/users" },
-  { icon: Cpu,        label: "システム",     path: "/admin/system" },
+  { icon: Users,    label: "ユーザー・ロール管理", path: "/admin/users" },
+  { icon: Shield,   label: "プラン管理",           path: "/admin/plans" },
+  { icon: Activity, label: "収益ダッシュボード",   path: "/admin/revenue" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "osm-sidebar-width";
@@ -473,27 +452,20 @@ function DashboardLayoutContent({
   const isMobile = useIsMobile();
   const isAdmin = user?.role === "admin";
 
-  // 各セクションの展開状態
+  // 各セクションの展開状態 (v4: Agent連携・ Claudeモニター廃止)
   const isSkillsActive = location.startsWith("/skills");
   const isCommunityActive = location.startsWith("/community");
-  const isClaudeActive = location.startsWith("/claude");
   const isSettingsActive = location.startsWith("/settings");
   const isAdminActive = location.startsWith("/admin");
 
-  const [skillsOpen, setSkillsOpen] = useState(isSkillsActive);
-  const [communityOpen, setCommunityOpen] = useState(isCommunityActive);
-  const [claudeOpen, setClaudeOpen] = useState(isClaudeActive);
   const [settingsOpen, setSettingsOpen] = useState(isSettingsActive);
   const [adminOpen, setAdminOpen] = useState(isAdminActive);
 
   // ページ遷移で自動展開
   useEffect(() => {
-    if (isSkillsActive) setSkillsOpen(true);
-    if (isCommunityActive) setCommunityOpen(true);
-    if (isClaudeActive) setClaudeOpen(true);
     if (isSettingsActive) setSettingsOpen(true);
     if (isAdminActive) setAdminOpen(true);
-  }, [isSkillsActive, isCommunityActive, isClaudeActive, isSettingsActive, isAdminActive]);
+  }, [isSettingsActive, isAdminActive]);
 
   useEffect(() => {
     if (isCollapsed) setIsResizing(false);
@@ -521,23 +493,18 @@ function DashboardLayoutContent({
     };
   }, [isResizing, setSidebarWidth]);
 
-  // アクティブラベル（モバイルヘッダー用）
+  // アクティブラベル（モバイルヘッダー用）(v4: 5本メニュー)
   const allPaths = [
     { path: "/dashboard", label: "ダッシュボード" },
-    { path: "/skills/health", label: "ヘルスモニター" },
     { path: "/skills", label: "マイスキル" },
-    { path: "/community/sources", label: "ソース管理" },
     { path: "/community", label: "スキル広場" },
-    { path: "/genealogy", label: "スキル系譜" },
-    { path: "/claude/github", label: "GitHub取得" },
-    { path: "/claude/merge", label: "AIマージ" },
-    { path: "/claude/diff", label: "差分インポート" },
-    { path: "/claude/tags", label: "自動タグ付け" },
-    { path: "/claude/single", label: "単体インポート" },
-    { path: "/claude/smart", label: "スマート起動" },
-    { path: "/claude/mcp", label: "MCP設定" },
-    { path: "/claude", label: "Agent連携" },
+    { path: "/settings/account", label: "ユーザーアカウント" },
+    { path: "/settings/wizard", label: "初期設定ウィザード" },
+    { path: "/settings/manual", label: "手動設定" },
     { path: "/settings", label: "設定" },
+    { path: "/admin/users", label: "ユーザー・ロール管理" },
+    { path: "/admin/plans", label: "プラン管理" },
+    { path: "/admin/revenue", label: "収益ダッシュボード" },
     { path: "/admin", label: "管理者パネル" },
   ];
   const activeItem = allPaths.find((item) => location.startsWith(item.path));
@@ -590,98 +557,33 @@ function DashboardLayoutContent({
                 </SidebarMenuItem>
               </MenuItemWithManual>
 
-              {/* ─── マイスキル（展開可能）─── */}
-              <ExpandableMenuItem
-                icon={Brain}
-                label="マイスキル"
-                isActive={isSkillsActive}
-                isOpen={skillsOpen}
-                isCollapsed={isCollapsed}
-                defaultPath="/skills"
-                onToggle={() => setSkillsOpen((v) => !v)}
-                tooltip="マイスキル"
-                manualPath="/skills"
-              />
-              {!isCollapsed && (
-                <SubMenu
-                  isOpen={skillsOpen}
-                  items={mySkillsSubItems}
-                  location={location}
-                  setLocation={setLocation}
-                />
-              )}
-
-              {/* ─── スキル広場（展開可能）─── */}
-              <ExpandableMenuItem
-                icon={Store}
-                label="スキル広場"
-                isActive={isCommunityActive}
-                isOpen={communityOpen}
-                isCollapsed={isCollapsed}
-                defaultPath="/community"
-                onToggle={() => setCommunityOpen((v) => !v)}
-                tooltip="スキル広場"
-                manualPath="/community"
-              />
-              {!isCollapsed && (
-                <SubMenu
-                  isOpen={communityOpen}
-                  items={communitySubItems}
-                  location={location}
-                  setLocation={setLocation}
-                />
-              )}
-
-              {/* スキル系譜 */}
-              <MenuItemWithManual path="/genealogy">
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    isActive={location.startsWith("/genealogy")}
-                    onClick={() => setLocation("/genealogy")}
-                    tooltip="スキル系譜"
-                    className="h-9 font-normal"
-                  >
-                    <GitBranch className={`h-4 w-4 ${location.startsWith("/genealogy") ? "text-primary" : "text-muted-foreground"}`} />
-                    <span className="text-sm">スキル系譜</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              </MenuItemWithManual>
-
-              {/* ─── Agent連携（展開可能）─── */}
-              <ExpandableMenuItem
-                icon={Sparkles}
-                label="Agent連携"
-                isActive={isClaudeActive}
-                isOpen={claudeOpen}
-                isCollapsed={isCollapsed}
-                defaultPath="/claude/github"
-                onToggle={() => setClaudeOpen((v) => !v)}
-                tooltip="Agent連携"
-                manualPath="/claude/github"
-              />
-              {!isCollapsed && (
-                <SubMenu
-                  isOpen={claudeOpen}
-                  items={claudeSubItems}
-                  location={location}
-                  setLocation={setLocation}
-                />
-              )}
-
-              {/* ─── Claude Code モニター ─── */}
+              {/* ─── マイスキル（直接リンク）─── */}
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  isActive={location === "/monitor"}
-                  onClick={() => setLocation("/monitor")}
-                  tooltip="Claude Codeモニター"
+                  isActive={isSkillsActive}
+                  onClick={() => setLocation("/skills")}
+                  tooltip="マイスキル"
                   className="h-9 font-normal"
                 >
-                  <Monitor className={`h-4 w-4 ${location === "/monitor" ? "text-primary" : "text-muted-foreground"}`} />
-                  <span className="text-sm">Codeモニター</span>
+                  <Brain className={`h-4 w-4 ${isSkillsActive ? "text-primary" : "text-muted-foreground"}`} />
+                  <span className="text-sm">マイスキル</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
 
-              {/* ─── 設定（ユーザー用）+ サブメニュー ─── */}
+              {/* ─── スキル広場（直接リンク）─── */}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={isCommunityActive}
+                  onClick={() => setLocation("/community")}
+                  tooltip="スキル広場"
+                  className="h-9 font-normal"
+                >
+                  <Store className={`h-4 w-4 ${isCommunityActive ? "text-primary" : "text-muted-foreground"}`} />
+                  <span className="text-sm">スキル広場</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              {/* ─── 設定（展開可能）─── */}
               {!isCollapsed && (
                 <div className="px-2 pt-4 pb-1">
                   <div className="h-px bg-sidebar-border mb-3" />
@@ -689,33 +591,31 @@ function DashboardLayoutContent({
               )}
 
               {/* 設定 親ボタン */}
-              <MenuItemWithManual path="/settings/integrations">
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    isActive={isSettingsActive}
-                    onClick={() => {
-                      if (isCollapsed) {
-                        setLocation("/settings/integrations");
-                      } else {
-                        setSettingsOpen((v) => !v);
-                        if (!settingsOpen) setLocation("/settings/integrations");
-                      }
-                    }}
-                    tooltip="設定"
-                    className="h-9 font-normal"
-                  >
-                    <Settings className={`h-4 w-4 ${isSettingsActive ? "text-primary" : "text-muted-foreground"}`} />
-                    <span className="text-sm flex-1">設定</span>
-                    {!isCollapsed && (
-                      settingsOpen
-                        ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-                        : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-                    )}
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              </MenuItemWithManual>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={isSettingsActive}
+                  onClick={() => {
+                    if (isCollapsed) {
+                      setLocation("/settings/account");
+                    } else {
+                      setSettingsOpen((v) => !v);
+                      if (!settingsOpen) setLocation("/settings/account");
+                    }
+                  }}
+                  tooltip="設定"
+                  className="h-9 font-normal"
+                >
+                  <Settings className={`h-4 w-4 ${isSettingsActive ? "text-primary" : "text-muted-foreground"}`} />
+                  <span className="text-sm flex-1">設定</span>
+                  {!isCollapsed && (
+                    settingsOpen
+                      ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                      : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                  )}
+                </SidebarMenuButton>
+              </SidebarMenuItem>
 
-              {/* 設定 サブメニュー */}
+              {/* 設定 サブメニュー (v4: ユーザーアカウント・初期設定ウィザード・手動設定) */}
               {!isCollapsed && settingsOpen && (
                 <SubMenu
                   isOpen={settingsOpen}
@@ -737,32 +637,30 @@ function DashboardLayoutContent({
                     </div>
                   )}
 
-                  {/* 管理者パネル 親ボタン */}
-                  <MenuItemWithManual path="/admin/account">
-                    <SidebarMenuItem>
-                      <SidebarMenuButton
-                        isActive={isAdminActive}
-                        onClick={() => {
-                          if (isCollapsed) {
-                            setLocation("/admin/account");
-                          } else {
-                            setAdminOpen((v) => !v);
-                            if (!adminOpen) setLocation("/admin/account");
-                          }
-                        }}
-                        tooltip="管理者パネル"
-                        className="h-9 font-normal"
-                      >
-                        <Shield className={`h-4 w-4 ${isAdminActive ? "text-primary" : "text-muted-foreground"}`} />
-                        <span className="text-sm flex-1">管理者パネル</span>
-                        {!isCollapsed && (
-                          adminOpen
-                            ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-                            : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-                        )}
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  </MenuItemWithManual>
+                  {/* 管理者パネル 親ボタン (v4) */}
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      isActive={isAdminActive}
+                      onClick={() => {
+                        if (isCollapsed) {
+                          setLocation("/admin/users");
+                        } else {
+                          setAdminOpen((v) => !v);
+                          if (!adminOpen) setLocation("/admin/users");
+                        }
+                      }}
+                      tooltip="管理者パネル"
+                      className="h-9 font-normal"
+                    >
+                      <Shield className={`h-4 w-4 ${isAdminActive ? "text-primary" : "text-muted-foreground"}`} />
+                      <span className="text-sm flex-1">管理者パネル</span>
+                      {!isCollapsed && (
+                        adminOpen
+                          ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                          : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                      )}
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
 
                   {/* 管理者パネル サブメニュー */}
                   {!isCollapsed && adminOpen && (
