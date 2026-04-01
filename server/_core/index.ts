@@ -216,7 +216,7 @@ setTimeout(async () => {
         } catch {}
       }
     }
-    const result = await runGithubCrawl(adminToken);
+    const result = await runGithubCrawl({ token: adminToken });
     console.log(`[GithubCrawl] Initial crawl done: found=${result.found}, saved=${result.saved}, updated=${result.updated}`);
   } catch (e) {
     console.error("[GithubCrawl] Initial crawl error:", e);
@@ -247,7 +247,7 @@ setInterval(async () => {
         } catch {}
       }
     }
-    const result = await runGithubCrawl(adminToken);
+    const result = await runGithubCrawl({ token: adminToken });
     console.log(`[GithubCrawl] Daily crawl done: found=${result.found}, saved=${result.saved}, updated=${result.updated}`);
   } catch (e) {
     console.error("[GithubCrawl] Daily crawl error:", e);

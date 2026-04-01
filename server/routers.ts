@@ -48,7 +48,7 @@ import {
   getDb,
 } from "./db";
 import { syncSkillSource } from "./github-sync";
-import { runGithubCrawl } from "./github-crawl";
+import { runGithubCrawl, loadCrawlOptionsFromDB } from "./github-crawl";
 import { detectPatterns, generateSkillSuggestions, generateSessionId, generateSuggestionId } from "./claude-monitor";
 import { detectAndSaveEvolutionProposals, findEvolutionCandidates } from "./skill-evolution";
 import type { ActivityEntry } from "./claude-monitor";
@@ -59,7 +59,7 @@ import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { communitySkills, githubSyncLogs, skillSources, skillVersions, skills } from "../drizzle/schema";
+import { communitySkills, githubSyncLogs, skillSources, skillVersions, skills, userSettings } from "../drizzle/schema";
 
 // ─────────────────────────────────────────────
 // Admin guard middleware
@@ -564,7 +564,8 @@ const communityRouter = router({
       } catch {}
     }
     // 非同期で実行（ブラウザをブロックしない）
-    runGithubCrawl(token).catch((e: unknown) =>
+    const crawlOpts = await loadCrawlOptionsFromDB(ctx.user.id).catch(() => ({}));
+    runGithubCrawl({ ...crawlOpts, token }).catch((e: unknown) =>
       console.error("[GithubCrawl] Manual trigger error:", e)
     );
     return { success: true, message: "GitHubクロールを開始しました。数分後にスキル広場に反映されます。" };
@@ -2015,6 +2016,125 @@ const settingsRouter = router({
       }>;
     } catch { return []; }
   }),
+  // ─── Step2: 同期スケジュール設定 ───
+  getSyncSettings: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+    const rows = await db.select().from(userSettings).where(eq(userSettings.userId, ctx.user.id)).limit(1);
+    if (rows.length === 0) return { syncIntervalHours: 24, syncBranch: "main" };
+    return { syncIntervalHours: rows[0].syncIntervalHours, syncBranch: rows[0].syncBranch };
+  }),
+  saveSyncSettings: protectedProcedure
+    .input(z.object({
+      syncIntervalHours: z.number().int().min(1).max(168).default(24),
+      syncBranch: z.string().max(64).default("main"),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const existing = await db.select({ id: userSettings.id }).from(userSettings).where(eq(userSettings.userId, ctx.user.id)).limit(1);
+      if (existing.length === 0) {
+        await db.insert(userSettings).values({ userId: ctx.user.id, syncIntervalHours: input.syncIntervalHours, syncBranch: input.syncBranch });
+      } else {
+        await db.update(userSettings).set({ syncIntervalHours: input.syncIntervalHours, syncBranch: input.syncBranch }).where(eq(userSettings.userId, ctx.user.id));
+      }
+      return { success: true };
+    }),
+  // ─── Step4: 進化提案設定 ───
+  getEvolutionSettings: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+    const rows = await db.select().from(userSettings).where(eq(userSettings.userId, ctx.user.id)).limit(1);
+    if (rows.length === 0) return { evolutionSimilarityThreshold: 70, evolutionCheckIntervalHours: 24 };
+    return { evolutionSimilarityThreshold: rows[0].evolutionSimilarityThreshold, evolutionCheckIntervalHours: rows[0].evolutionCheckIntervalHours };
+  }),
+  saveEvolutionSettings: protectedProcedure
+    .input(z.object({
+      evolutionSimilarityThreshold: z.number().int().min(0).max(100).default(70),
+      evolutionCheckIntervalHours: z.number().int().min(1).max(168).default(24),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const existing = await db.select({ id: userSettings.id }).from(userSettings).where(eq(userSettings.userId, ctx.user.id)).limit(1);
+      if (existing.length === 0) {
+        await db.insert(userSettings).values({ userId: ctx.user.id, evolutionSimilarityThreshold: input.evolutionSimilarityThreshold, evolutionCheckIntervalHours: input.evolutionCheckIntervalHours });
+      } else {
+        await db.update(userSettings).set({ evolutionSimilarityThreshold: input.evolutionSimilarityThreshold, evolutionCheckIntervalHours: input.evolutionCheckIntervalHours }).where(eq(userSettings.userId, ctx.user.id));
+      }
+      return { success: true };
+    }),
+  // ─── Step6: 回遊設定（クロール設定） ───
+  getCrawlSettings: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+    const rows = await db.select().from(userSettings).where(eq(userSettings.userId, ctx.user.id)).limit(1);
+    if (rows.length === 0) return {
+      crawlEnabled: true, crawlIntervalHours: 24, crawlKeywords: "",
+      crawlSearchPath: ".claude/skills", crawlExcludeRepos: [],
+      crawlMinStars: 0, crawlMinForks: 0, crawlMaxAgeDays: 0,
+      crawlMinSkillLength: 100, crawlDuplicatePolicy: "update",
+      crawlLanguageFilter: "", crawlDailyLimit: 100, crawlRankBy: "composite",
+      crawlRateLimitMs: 500, crawlDuplicateWindowDays: 0,
+    };
+    const r = rows[0];
+    return {
+      crawlEnabled: r.crawlEnabled, crawlIntervalHours: r.crawlIntervalHours,
+      crawlKeywords: r.crawlKeywords ?? "", crawlSearchPath: r.crawlSearchPath,
+      crawlExcludeRepos: r.crawlExcludeRepos ? JSON.parse(r.crawlExcludeRepos) : [],
+      crawlMinStars: r.crawlMinStars, crawlMinForks: r.crawlMinForks,
+      crawlMaxAgeDays: r.crawlMaxAgeDays, crawlMinSkillLength: r.crawlMinSkillLength,
+      crawlDuplicatePolicy: r.crawlDuplicatePolicy, crawlLanguageFilter: r.crawlLanguageFilter,
+      crawlDailyLimit: r.crawlDailyLimit, crawlRankBy: r.crawlRankBy,
+      crawlRateLimitMs: r.crawlRateLimitMs, crawlDuplicateWindowDays: r.crawlDuplicateWindowDays,
+    };
+  }),
+  saveCrawlSettings: protectedProcedure
+    .input(z.object({
+      crawlEnabled: z.boolean().default(true),
+      crawlIntervalHours: z.number().int().min(1).max(168).default(24),
+      crawlKeywords: z.string().default(""),
+      crawlSearchPath: z.string().max(255).default(".claude/skills"),
+      crawlExcludeRepos: z.array(z.string()).default([]),
+      crawlMinStars: z.number().int().min(0).default(0),
+      crawlMinForks: z.number().int().min(0).default(0),
+      crawlMaxAgeDays: z.number().int().min(0).default(0),
+      crawlMinSkillLength: z.number().int().min(0).default(100),
+      crawlDuplicatePolicy: z.enum(["skip", "update", "version"]).default("update"),
+      crawlLanguageFilter: z.string().default(""),
+      crawlDailyLimit: z.number().int().min(1).max(1000).default(100),
+      crawlRankBy: z.enum(["stars", "forks", "freshness", "composite"]).default("composite"),
+      crawlRateLimitMs: z.number().int().min(0).max(5000).default(500),
+      crawlDuplicateWindowDays: z.number().int().min(0).default(0),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const vals = {
+        crawlEnabled: input.crawlEnabled,
+        crawlIntervalHours: input.crawlIntervalHours,
+        crawlKeywords: input.crawlKeywords,
+        crawlSearchPath: input.crawlSearchPath,
+        crawlExcludeRepos: JSON.stringify(input.crawlExcludeRepos),
+        crawlMinStars: input.crawlMinStars,
+        crawlMinForks: input.crawlMinForks,
+        crawlMaxAgeDays: input.crawlMaxAgeDays,
+        crawlMinSkillLength: input.crawlMinSkillLength,
+        crawlDuplicatePolicy: input.crawlDuplicatePolicy,
+        crawlLanguageFilter: input.crawlLanguageFilter,
+        crawlDailyLimit: input.crawlDailyLimit,
+        crawlRankBy: input.crawlRankBy,
+        crawlRateLimitMs: input.crawlRateLimitMs,
+        crawlDuplicateWindowDays: input.crawlDuplicateWindowDays,
+      };
+      const existing = await db.select({ id: userSettings.id }).from(userSettings).where(eq(userSettings.userId, ctx.user.id)).limit(1);
+      if (existing.length === 0) {
+        await db.insert(userSettings).values({ userId: ctx.user.id, ...vals });
+      } else {
+        await db.update(userSettings).set(vals).where(eq(userSettings.userId, ctx.user.id));
+      }
+      return { success: true };
+    }),
   savePublicWatchList: protectedProcedure
     .input(z.object({
       watchList: z.array(z.object({

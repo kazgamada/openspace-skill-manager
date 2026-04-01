@@ -272,3 +272,20 @@
 - [x] UserSettings.tsx Step1: 「スキル広場用 監視先リスト」セクション（公開アカウント/リポジトリを複数登録・追加/削除UI）を下段に配置
 - [x] UserSettings.tsx Step1: 監視先リストの保存時にskill_sourcesテーブルにも自動登録するロジックを実装
 - [x] 設計方針書v5作成（Step1の2種類GitHub連携仕様を反映）
+
+## v6 全機能実装
+
+- [ ] DBスキーマ: user_settingsにcrawl設定カラム追加（crawlEnabled, crawlIntervalHours, crawlKeywords, crawlSearchPath, crawlExcludeRepos, crawlMinStars, crawlMinForks, crawlMaxAgeDays, crawlMinSkillLength, crawlDuplicatePolicy, crawlLanguageFilter, crawlDailyLimit, crawlRankBy, crawlRateLimitProtection, crawlDuplicateWindowDays）
+- [ ] DBスキーマ: user_settingsにStep2/Step4設定値カラム追加（syncIntervalHours, syncBranch, evolutionSimilarityThreshold, evolutionCheckIntervalHours）
+- [ ] DBマイグレーション実行（ALTER TABLE）
+- [ ] API: settings.getCrawlSettings / saveCrawlSettings 追加
+- [ ] API: settings.getSyncSettings / saveSyncSettings 追加（Step2永続化）
+- [ ] API: settings.getEvolutionSettings / saveEvolutionSettings 追加（Step4永続化）
+- [ ] ウィザードUI: 7ステップ・2エリア構成に刷新（マイスキル設定Step1〜4 / スキル広場設定Step5〜7）
+- [ ] ウィザードUI: Step1をマイスキル用GitHubトークンのみに絞る（監視先リストをStep5に移動）
+- [ ] ウィザードUI: Step5に監視先リストを移動（Step1から分離）
+- [ ] ウィザードUI: Step6に回遊設定3セクション新規実装（クロール動作・スキル条件・取得条件）
+- [ ] ウィザードUI: Step2（同期スケジュール）の設定値をDBに保存
+- [ ] ウィザードUI: Step4（進化提案設定）の設定値をDBに保存
+- [ ] github-crawl.tsへの条件フィルター適用（crawlMinStars, crawlMinForks, crawlMaxAgeDays, crawlMinSkillLength, crawlDailyLimit, crawlRankBy等）
+- [ ] バッジ自動付与ロジック（スキル作成時→new, 修復完了時→repaired, 進化提案適用時→derived）

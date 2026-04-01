@@ -198,6 +198,47 @@ export const userSettings = mysqlTable("user_settings", {
   githubLastSyncAt: timestamp("githubLastSyncAt"),
   // スキル広場用 監視先リスト（JSON配列: [{repoOwner, repoName, skillsPath, branch, label}]）
   publicWatchList: text("publicWatchList"),
+  // ─── マイスキル設定: Step2 同期スケジュール ───
+  // 同期間隔（時間）: 1/6/12/24/72/168
+  syncIntervalHours: int("syncIntervalHours").default(24).notNull(),
+  // 同期対象ブランチ
+  syncBranch: varchar("syncBranch", { length: 64 }).default("main").notNull(),
+  // ─── マイスキル設定: Step4 進化提案設定 ───
+  // 類似度閾値（0.0〜1.0）
+  evolutionSimilarityThreshold: int("evolutionSimilarityThreshold").default(70).notNull(),
+  // 進化提案チェック間隔（時間）
+  evolutionCheckIntervalHours: int("evolutionCheckIntervalHours").default(24).notNull(),
+  // ─── スキル広場設定: Step6 回遊設定 ───
+  // 自動クロールON/OFF
+  crawlEnabled: boolean("crawlEnabled").default(true).notNull(),
+  // クロール間隔（時間）: 6/12/24/72/168
+  crawlIntervalHours: int("crawlIntervalHours").default(24).notNull(),
+  // 検索キーワード（カンマ区切り）
+  crawlKeywords: text("crawlKeywords"),
+  // 検索対象パス（デフォルト: .claude/skills）
+  crawlSearchPath: varchar("crawlSearchPath", { length: 255 }).default(".claude/skills").notNull(),
+  // 除外リポジトリ（JSON配列: ["owner/repo"]）
+  crawlExcludeRepos: text("crawlExcludeRepos"),
+  // 最低スター数
+  crawlMinStars: int("crawlMinStars").default(0).notNull(),
+  // 最低フォーク数
+  crawlMinForks: int("crawlMinForks").default(0).notNull(),
+  // 最終更新日（日数）: 0=制限なし
+  crawlMaxAgeDays: int("crawlMaxAgeDays").default(0).notNull(),
+  // SKILL.md最小文字数
+  crawlMinSkillLength: int("crawlMinSkillLength").default(100).notNull(),
+  // 重複スキルの扱い: skip | update | version
+  crawlDuplicatePolicy: varchar("crawlDuplicatePolicy", { length: 16 }).default("update").notNull(),
+  // 言語フィルター（カンマ区切り: ja,en 等、空=全言語）
+  crawlLanguageFilter: varchar("crawlLanguageFilter", { length: 128 }).default("").notNull(),
+  // 1日あたり最大取得件数
+  crawlDailyLimit: int("crawlDailyLimit").default(100).notNull(),
+  // ランキング基準: stars | forks | freshness | composite
+  crawlRankBy: varchar("crawlRankBy", { length: 32 }).default("composite").notNull(),
+  // APIレート制限対策: 各リクエスト間の待機時間（ms）
+  crawlRateLimitMs: int("crawlRateLimitMs").default(500).notNull(),
+  // 重複チェック対象期間（日数）: 0=全期間
+  crawlDuplicateWindowDays: int("crawlDuplicateWindowDays").default(0).notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
