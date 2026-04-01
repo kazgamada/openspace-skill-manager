@@ -17,6 +17,9 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   Activity, Brain, Clock, ExternalLink, Eye, GitBranch,
   Globe, Lock, MoreHorizontal, Plus, RefreshCw, Search, Trash2, Wrench,
   Zap, ZoomIn, ZoomOut, Maximize2, Info,
@@ -145,27 +148,72 @@ interface SkillItem {
 }
 
 // ─── スコアバー共通コンポーネント ──────────────────────────
+function ScoreTooltipContent({ score }: { score: number }) {
+  const status = score >= 80 ? { label: "Healthy", cls: "text-emerald-400" }
+    : score >= 60 ? { label: "Warning", cls: "text-amber-400" }
+    : score > 0  ? { label: "Critical", cls: "text-rose-400" }
+    : { label: "未計測", cls: "text-muted-foreground" };
+
+  return (
+    <div className="w-56 space-y-2 text-xs">
+      <div className="flex items-center justify-between">
+        <span className="font-semibold text-foreground">品質スコア: <span className={status.cls}>{score.toFixed(0)}pt</span></span>
+        <span className={`text-[10px] font-medium ${status.cls}`}>{status.label}</span>
+      </div>
+      <div className="h-1.5 rounded-full bg-muted/40 overflow-hidden">
+        <div
+          className={`h-full rounded-full ${
+            score >= 80 ? "bg-emerald-400" : score >= 60 ? "bg-amber-400" : score > 0 ? "bg-rose-400" : "bg-muted/40"
+          }`}
+          style={{ width: `${score}%` }}
+        />
+      </div>
+      <div className="border-t border-border/50 pt-1.5 space-y-1">
+        <p className="text-[10px] text-muted-foreground font-medium mb-1">スコアの算出方法</p>
+        <div className="text-[10px] text-muted-foreground space-y-1">
+          <p>· <span className="text-foreground/80">クロール取得時</span>: stars/forks/freshnessの複合ランク × 5（上限100）</p>
+          <p>· <span className="text-foreground/80">手動修復時</span>: 現在値 +5pt（自動修復は +10pt）</p>
+          <p>· <span className="text-foreground/80">進化提案適用時</span>: LLM評価に基づく進化スコアを設定</p>
+          <p>· <span className="text-foreground/80">手動登録時</span>: 初期値 50pt</p>
+        </div>
+      </div>
+      <div className="border-t border-border/50 pt-1.5">
+        <p className="text-[10px] text-muted-foreground">判定基準: 80+ Healthy · 60–79 Warning · 1–59 Critical</p>
+      </div>
+    </div>
+  );
+}
+
 function SkillScoreBar({ score, compact = false }: { score?: number | null; compact?: boolean }) {
   const val = score ?? 0;
   const hasScore = score !== null && score !== undefined && score > 0;
   const color = val >= 80 ? "bg-emerald-400" : val >= 60 ? "bg-amber-400" : val > 0 ? "bg-rose-400" : "bg-muted/40";
-  if (compact) {
-    return (
-      <div className="flex items-center gap-1.5 w-full">
-        <div className="flex-1 h-1 rounded-full bg-muted/30 overflow-hidden">
-          <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${val}%` }} />
-        </div>
-        <span className="text-[9px] font-mono text-muted-foreground w-5 text-right shrink-0">{hasScore ? val.toFixed(0) : "–"}</span>
+  const bar = compact ? (
+    <div className="flex items-center gap-1.5 w-full">
+      <div className="flex-1 h-1 rounded-full bg-muted/30 overflow-hidden">
+        <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${val}%` }} />
       </div>
-    );
-  }
-  return (
+      <span className="text-[9px] font-mono text-muted-foreground w-5 text-right shrink-0">{hasScore ? val.toFixed(0) : "–"}</span>
+    </div>
+  ) : (
     <div className="flex items-center gap-2">
       <div className="flex-1 h-1.5 rounded-full bg-muted/30 overflow-hidden">
         <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${val}%` }} />
       </div>
       <span className="text-[10px] font-mono text-muted-foreground w-7 text-right shrink-0">{hasScore ? `${val.toFixed(0)}` : "–"}</span>
     </div>
+  );
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="cursor-help w-full">{bar}</div>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="bg-popover border border-border shadow-lg p-3">
+          <ScoreTooltipContent score={val} />
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 

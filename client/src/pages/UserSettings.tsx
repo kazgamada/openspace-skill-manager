@@ -716,12 +716,66 @@ function ManualTab() {
   const [editingService, setEditingService] = useState<string | null>(null);
   const [tokenInput, setTokenInput] = useState("");
   const utils = trpc.useUtils();
+  const [, navigate] = useLocation();
 
   const services = [
     { type: "github",      label: "GitHub",            desc: "リポジトリからスキルを取得",    icon: Github },
     { type: "claude",      label: "Claude Code",       desc: "MCP連携・スキル自動取得",       icon: Zap },
     { type: "googleDrive", label: "Google Drive",      desc: "Driveからスキルを取得",         icon: HardDrive },
     { type: "localFolder", label: "ローカルフォルダー", desc: "ローカルパスからスキルを取得",   icon: Terminal },
+  ];
+
+  // Agent連携の7機能
+  const agentFeatures = [
+    {
+      path: "/claude/github",
+      label: "GitHub取得",
+      desc: "GitHubリポジトリのSKILL.mdを一覧取得・一括インポート",
+      icon: Github,
+      color: "text-blue-400",
+    },
+    {
+      path: "/claude/merge",
+      label: "AIマージ",
+      desc: "複数のSKILL.mdをLLMで合成して品質向上",
+      icon: Sparkles,
+      color: "text-purple-400",
+    },
+    {
+      path: "/claude/diff",
+      label: "差分インポート",
+      desc: "既存スキルを新バージョンとして差分登録",
+      icon: RefreshCw,
+      color: "text-cyan-400",
+    },
+    {
+      path: "/claude/tags",
+      label: "自動タグ付け",
+      desc: "allowed-toolsからタグを自動マッピング・プレビュー",
+      icon: Filter,
+      color: "text-yellow-400",
+    },
+    {
+      path: "/claude/import",
+      label: "単体インポート",
+      desc: "SKILL.mdを貼り付け・アップロードして1件ずつ登録",
+      icon: Link2,
+      color: "text-green-400",
+    },
+    {
+      path: "/claude/smart",
+      label: "スマート起動",
+      desc: "キーワード・タスク種別でスキルを検索してSKILL.mdをコピー",
+      icon: Zap,
+      color: "text-orange-400",
+    },
+    {
+      path: "/claude/mcp",
+      label: "MCP設定",
+      desc: "~/.claude.json用MCP設定スニペット・オーケストレーターSKILL.mdを生成",
+      icon: Terminal,
+      color: "text-pink-400",
+    },
   ];
 
   const getStatus = (serviceType: string) => {
@@ -743,43 +797,75 @@ function ManualTab() {
   };
 
   return (
-    <div className="space-y-4 max-w-xl">
-      <p className="text-sm text-muted-foreground">各サービスの連携設定を直接編集します。</p>
-      {isLoading ? (
-        <div className="text-sm text-muted-foreground">読み込み中...</div>
-      ) : (
-        services.map(({ type, label, desc, icon: Icon }) => {
-          const status = getStatus(type);
-          const isEditing = editingService === type;
-          return (
-            <div key={type} className="rounded-md border border-border bg-card/50 p-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Icon className="w-4 h-4 text-muted-foreground" />
-                  <div>
-                    <p className="text-sm font-medium">{label}</p>
-                    <p className="text-xs text-muted-foreground">{desc}</p>
+    <div className="space-y-6 max-w-2xl">
+      {/* ─── 外部サービス連携設定 ─── */}
+      <div>
+        <h3 className="text-sm font-semibold text-foreground mb-1">外部サービス連携</h3>
+        <p className="text-xs text-muted-foreground mb-3">各サービスのアクセストークンを直接設定します。</p>
+        {isLoading ? (
+          <div className="text-sm text-muted-foreground">読み込み中...</div>
+        ) : (
+          <div className="space-y-3">
+            {services.map(({ type, label, desc, icon: Icon }) => {
+              const status = getStatus(type);
+              const isEditing = editingService === type;
+              return (
+                <div key={type} className="rounded-md border border-border bg-card/50 p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Icon className="w-4 h-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-sm font-medium">{label}</p>
+                        <p className="text-xs text-muted-foreground">{desc}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {status?.connected && (
+                        <Badge className="text-xs bg-green-500/10 text-green-400 border-green-500/30">連携済み</Badge>
+                      )}
+                      <Button size="sm" variant="outline" onClick={() => { setEditingService(isEditing ? null : type); setTokenInput(""); }}>
+                        {isEditing ? "キャンセル" : "設定"}
+                      </Button>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {status?.connected && (
-                    <Badge className="text-xs bg-green-500/10 text-green-400 border-green-500/30">連携済み</Badge>
+                  {isEditing && (
+                    <div className="mt-3 space-y-2">
+                      <Input type="password" placeholder={status?.connected ? "変更する場合のみ入力" : "アクセストークン"} value={tokenInput} onChange={(e) => setTokenInput(e.target.value)} className="bg-background/50" />
+                      <Button size="sm" onClick={() => handleSave(type as "claude" | "github" | "googleDrive" | "localFolder")} disabled={!tokenInput}>保存</Button>
+                    </div>
                   )}
-                  <Button size="sm" variant="outline" onClick={() => { setEditingService(isEditing ? null : type); setTokenInput(""); }}>
-                    {isEditing ? "キャンセル" : "設定"}
-                  </Button>
                 </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ─── Agent連携 ─── */}
+      <div>
+        <h3 className="text-sm font-semibold text-foreground mb-1">Agent連携</h3>
+        <p className="text-xs text-muted-foreground mb-3">
+          Claude Code との連携機能を直接操作します。各機能のページに移動して設定・実行できます。
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {agentFeatures.map(({ path, label, desc, icon: Icon, color }) => (
+            <button
+              key={path}
+              onClick={() => navigate(path)}
+              className="flex items-start gap-3 rounded-md border border-border bg-card/50 p-4 text-left hover:bg-card/80 transition-colors group"
+            >
+              <div className={`mt-0.5 shrink-0 ${color}`}>
+                <Icon className="w-4 h-4" />
               </div>
-              {isEditing && (
-                <div className="mt-3 space-y-2">
-                  <Input type="password" placeholder={status?.connected ? "変更する場合のみ入力" : "アクセストークン"} value={tokenInput} onChange={(e) => setTokenInput(e.target.value)} className="bg-background/50" />
-                  <Button size="sm" onClick={() => handleSave(type as "claude" | "github" | "googleDrive" | "localFolder")} disabled={!tokenInput}>保存</Button>
-                </div>
-              )}
-            </div>
-          );
-        })
-      )}
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">{label}</p>
+                <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{desc}</p>
+              </div>
+              <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0 mt-1 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

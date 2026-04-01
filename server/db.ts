@@ -99,7 +99,7 @@ export async function updateUserRole(userId: number, role: "user" | "admin") {
 // ─────────────────────────────────────────────
 // Skills
 // ─────────────────────────────────────────────
-export type SkillWithScore = Skill & { qualityScore: number | null };
+export interface SkillWithScore extends Skill { qualityScore: number | null }
 
 export async function getSkillsByUser(authorId: number): Promise<SkillWithScore[]> {
   const db = await getDb();

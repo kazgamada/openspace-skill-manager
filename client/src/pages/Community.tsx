@@ -18,6 +18,9 @@ import { ja } from "date-fns/locale";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { ViewToggle, useViewMode, type ViewMode } from "@/components/ViewToggle";
@@ -27,13 +30,43 @@ const CATEGORIES = ["all", "web", "search", "data", "auth", "ai", "util", "testi
 function QualityBar({ score }: { score: number | null }) {
   const s = score ?? 0;
   const color = s >= 80 ? "bg-emerald-400" : s >= 60 ? "bg-amber-400" : "bg-rose-400";
+  const statusLabel = s >= 80 ? "Healthy" : s >= 60 ? "Warning" : s > 0 ? "Critical" : "未計測";
+  const statusCls = s >= 80 ? "text-emerald-400" : s >= 60 ? "text-amber-400" : s > 0 ? "text-rose-400" : "text-muted-foreground";
   return (
-    <div className="flex items-center gap-2">
-      <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
-        <div className={`h-full rounded-full ${color}`} style={{ width: `${s}%` }} />
-      </div>
-      <span className="text-[10px] font-mono text-muted-foreground">{s.toFixed(0)}%</span>
-    </div>
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="flex items-center gap-2 cursor-help">
+            <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
+              <div className={`h-full rounded-full ${color}`} style={{ width: `${s}%` }} />
+            </div>
+            <span className="text-[10px] font-mono text-muted-foreground">{s.toFixed(0)}%</span>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="bg-popover border border-border shadow-lg p-3 w-56">
+          <div className="space-y-2 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-foreground">品質スコア: <span className={statusCls}>{s.toFixed(0)}pt</span></span>
+              <span className={`text-[10px] font-medium ${statusCls}`}>{statusLabel}</span>
+            </div>
+            <div className="h-1.5 rounded-full bg-muted/40 overflow-hidden">
+              <div className={`h-full rounded-full ${color}`} style={{ width: `${s}%` }} />
+            </div>
+            <div className="border-t border-border/50 pt-1.5 space-y-1">
+              <p className="text-[10px] text-muted-foreground font-medium">スコアの算出方法</p>
+              <div className="text-[10px] text-muted-foreground space-y-0.5">
+                <p>· <span className="text-foreground/80">クロール取得時</span>: stars/forks/freshness複合ランク × 5</p>
+                <p>· <span className="text-foreground/80">手動修復時</span>: +5pt（自動修復は +10pt）</p>
+                <p>· <span className="text-foreground/80">進化提案適用時</span>: LLM評価に基づく進化スコア</p>
+              </div>
+            </div>
+            <div className="border-t border-border/50 pt-1.5">
+              <p className="text-[10px] text-muted-foreground">80+ Healthy · 60–79 Warning · 1–59 Critical</p>
+            </div>
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
