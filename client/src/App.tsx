@@ -11,6 +11,7 @@ import SkillDetail from "./pages/SkillDetail";
 import Community from "./pages/Community";
 import AdminSettings from "./pages/AdminSettings";
 import UserSettings from "./pages/UserSettings";
+import ClaudeIntegration from "./pages/ClaudeIntegration";
 
 function Router() {
   return (
@@ -27,7 +28,10 @@ function Router() {
       <Route path="/settings/account" component={UserSettings} />
       <Route path="/settings/wizard" component={UserSettings} />
       <Route path="/settings/manual" component={UserSettings} />
-      {/* 管理者パネル（v4: 3サブページ） */}
+      {/* Agent連携 */}
+      <Route path="/claude" component={ClaudeIntegration} />
+      <Route path="/claude/:tab" component={ClaudeIntegration} />
+      {/* 管者パネル（v4: 3サブページ） */}
       <Route path="/admin" component={AdminSettings} />
       <Route path="/admin/users" component={AdminSettings} />
       <Route path="/admin/plans" component={AdminSettings} />

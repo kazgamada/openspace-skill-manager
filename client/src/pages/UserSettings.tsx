@@ -725,15 +725,8 @@ function ManualTab() {
     { type: "localFolder", label: "ローカルフォルダー", desc: "ローカルパスからスキルを取得",   icon: Terminal },
   ];
 
-  // Agent連携の7機能
+  // Agent連携の6機能（GitHub取得は別途実装済みのため除外）
   const agentFeatures = [
-    {
-      path: "/claude/github",
-      label: "GitHub取得",
-      desc: "GitHubリポジトリのSKILL.mdを一覧取得・一括インポート",
-      icon: Github,
-      color: "text-blue-400",
-    },
     {
       path: "/claude/merge",
       label: "AIマージ",
@@ -756,7 +749,7 @@ function ManualTab() {
       color: "text-yellow-400",
     },
     {
-      path: "/claude/import",
+      path: "/claude/single",
       label: "単体インポート",
       desc: "SKILL.mdを貼り付け・アップロードして1件ずつ登録",
       icon: Link2,

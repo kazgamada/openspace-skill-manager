@@ -307,3 +307,9 @@
 - [x] 品質スコア計算ロジック: スコア構成要素（クロールランク50%・修復ボーナス30%・進化スコア20%）を調査・文書化
 - [x] MySkills.tsx: スコアバーホバーでスコア構成要素・判定基準ツールチップを表示
 - [x] Community.tsx: スコアバーホバーでスコア構成要素・判定基準ツールチップを表示
+
+## Agent連携カードのリンク修正
+
+- [x] App.tsxに /claude/:tab ルートを追加（ClaudeIntegration.tsxを登録）
+- [x] UserSettings手動設定: GitHub取得カードを削除（別途実装済みのため）
+- [x] UserSettings手動設定: 欙6項目のpathを /claude/:tab の正しいタブ名に修正（/claude/merge, /claude/diff, /claude/tags, /claude/single, /claude/smart, /claude/mcp）
