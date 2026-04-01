@@ -58,7 +58,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
-import { desc, eq, inArray } from "drizzle-orm";
+import { desc, eq, inArray, sql } from "drizzle-orm";
 import { communitySkills, githubSyncLogs, skillSources, skillVersions, skills } from "../drizzle/schema";
 
 // ─────────────────────────────────────────────
@@ -2214,18 +2214,17 @@ const evolutionRouter = router({
     .input(z.object({ status: z.enum(["pending", "applied", "dismissed"]).optional() }).optional())
     .query(async ({ ctx, input }) => {
       const db = await getDb();
-      const pool = (db as any).$client;
+      if (!db) return [];
       const status = input?.status ?? "pending";
-      const [rows] = await pool.execute(
-        `SELECT id, mySkillId, mySkillName, publicSkillIds, publicSkillNames,
+      const [rows] = await db.execute(
+        sql`SELECT id, mySkillId, mySkillName, publicSkillIds, publicSkillNames,
                 reason, evolutionScore, status, createdAt
          FROM skill_evolution_proposals
-         WHERE userId = ? AND status = ?
+         WHERE userId = ${ctx.user.id} AND status = ${status}
          ORDER BY evolutionScore DESC, createdAt DESC
-         LIMIT 20`,
-        [ctx.user.id, status]
+         LIMIT 20`
       );
-      return (rows as Array<{
+      return (rows as unknown as Array<{
         id: string; mySkillId: string | null; mySkillName: string;
         publicSkillIds: string; publicSkillNames: string;
         reason: string; evolutionScore: number; status: string; createdAt: Date;
@@ -2241,12 +2240,11 @@ const evolutionRouter = router({
     .input(z.object({ proposalId: z.string() }))
     .query(async ({ ctx, input }) => {
       const db = await getDb();
-      const pool = (db as any).$client;
-      const [rows] = await pool.execute(
-        `SELECT * FROM skill_evolution_proposals WHERE id = ? AND userId = ?`,
-        [input.proposalId, ctx.user.id]
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const [rows] = await db.execute(
+        sql`SELECT * FROM skill_evolution_proposals WHERE id = ${input.proposalId} AND userId = ${ctx.user.id}`
       );
-      const row = (rows as Array<Record<string, unknown>>)[0];
+      const row = (rows as unknown as Array<Record<string, unknown>>)[0];
       if (!row) throw new TRPCError({ code: "NOT_FOUND" });
       return {
         ...row,
@@ -2260,13 +2258,12 @@ const evolutionRouter = router({
     .input(z.object({ proposalId: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      const pool = (db as any).$client;
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
       // 提案を取得
-      const [rows] = await pool.execute(
-        `SELECT * FROM skill_evolution_proposals WHERE id = ? AND userId = ? AND status = 'pending'`,
-        [input.proposalId, ctx.user.id]
+      const [rows] = await db.execute(
+        sql`SELECT * FROM skill_evolution_proposals WHERE id = ${input.proposalId} AND userId = ${ctx.user.id} AND status = 'pending'`
       );
-      const proposal = (rows as Array<Record<string, unknown>>)[0];
+      const proposal = (rows as unknown as Array<Record<string, unknown>>)[0];
       if (!proposal) throw new TRPCError({ code: "NOT_FOUND", message: "提案が見つかりません" });
 
       const mySkillId = proposal.mySkillId as string | null;
@@ -2321,9 +2318,8 @@ const evolutionRouter = router({
       }
 
       // 提案をappliedに更新
-      await pool.execute(
-        `UPDATE skill_evolution_proposals SET status = 'applied', updatedAt = NOW() WHERE id = ?`,
-        [input.proposalId]
+      await db.execute(
+        sql`UPDATE skill_evolution_proposals SET status = 'applied', updatedAt = NOW() WHERE id = ${input.proposalId}`
       );
 
 
@@ -2338,10 +2334,9 @@ const evolutionRouter = router({
     .input(z.object({ proposalId: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      const pool = (db as any).$client;
-      await pool.execute(
-        `UPDATE skill_evolution_proposals SET status = 'dismissed', updatedAt = NOW() WHERE id = ? AND userId = ?`,
-        [input.proposalId, ctx.user.id]
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      await db.execute(
+        sql`UPDATE skill_evolution_proposals SET status = 'dismissed', updatedAt = NOW() WHERE id = ${input.proposalId} AND userId = ${ctx.user.id}`
       );
       return { success: true };
     }),
