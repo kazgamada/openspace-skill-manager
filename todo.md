@@ -264,11 +264,11 @@
 - [x] AdminSettings.tsx: プラン管理・収益ダッシュボードのサブページを追加
 
 ## Step1 GitHub連携UI改修（マイスキル用/スキル広場用の2種類分離）
-- [ ] DB: user_settingsテーブルにpublicWatchAccounts（JSON配列）カラムを追加・マイグレーション
-- [ ] server/routers.ts: settings.savePublicWatchAccounts エンドポイント実装（スキル広場用監視先リスト保存）
-- [ ] server/routers.ts: settings.getPublicWatchAccounts エンドポイント実装（スキル広場用監視先リスト取得）
-- [ ] server/routers.ts: community.addSource を公開アカウント監視先リストからも呼び出せるよう拡張
-- [ ] UserSettings.tsx Step1: 「マイスキル用GitHubアカウント」セクション（アクセストークン・自分のリポジトリ）を上段に配置
-- [ ] UserSettings.tsx Step1: 「スキル広場用 監視先リスト」セクション（公開アカウント/リポジトリを複数登録・追加/削除UI）を下段に配置
-- [ ] UserSettings.tsx Step1: 監視先リストの保存時にskill_sourcesテーブルにも自動登録するロジックを実装
-- [ ] 設計方針書v5作成（Step1の2種類GitHub連携仕様を反映）
+- [x] DB: user_settingsテーブルにpublicWatchAccounts（JSON配列）カラムを追加・マイグレーション（publicWatchListとして実装）
+- [x] server/routers.ts: settings.savePublicWatchList エンドポイント実装（スキル広場用監視先リスト保存）
+- [x] server/routers.ts: settings.getPublicWatchList エンドポイント実装（スキル広場用監視先リスト取得）
+- [x] server/routers.ts: community.addSource を公開アカウント監視先リストからも呼び出せるよう拡張（savePublicWatchList内でskill_sourcesに自動登録）
+- [x] UserSettings.tsx Step1: 「マイスキル用GitHubアカウント」セクション（アクセストークン・自分のリポジトリ）を上段に配置
+- [x] UserSettings.tsx Step1: 「スキル広場用 監視先リスト」セクション（公開アカウント/リポジトリを複数登録・追加/削除UI）を下段に配置
+- [x] UserSettings.tsx Step1: 監視先リストの保存時にskill_sourcesテーブルにも自動登録するロジックを実装
+- [x] 設計方針書v5作成（Step1の2種類GitHub連携仕様を反映）
