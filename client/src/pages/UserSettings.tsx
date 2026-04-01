@@ -27,6 +27,7 @@ import {
   Globe, Zap, Bell, PlusCircle, Trash2, Lock, ChevronRight, ChevronLeft,
   CheckCircle2, Filter, Clock, Link2, HardDrive, Terminal, AlertCircle,
 } from "lucide-react";
+import DashboardLayout from "@/components/DashboardLayout";
 // ─── ステップ定義義 ──────────────────────────────────
 const STEPS = [
   { id: 1, label: "GitHub連携",    icon: Github,    area: "my"     as const },
@@ -796,38 +797,40 @@ export default function UserSettings() {
   const activeTab = tabs.find((t) => location.startsWith(t.path))?.path ?? "/settings/account";
 
   return (
-    <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-xl font-bold flex items-center gap-2">
-          <Settings className="w-5 h-5" />
-          設定
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">初期設定に関するすべての設定項目をここに集約しています</p>
-      </div>
+    <DashboardLayout>
+      <div className="p-6 space-y-6">
+        <div>
+          <h1 className="text-xl font-bold flex items-center gap-2">
+            <Settings className="w-5 h-5" />
+            設定
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">初期設定に関するすべての設定項目をここに集約しています</p>
+        </div>
 
-      {/* タブナビ */}
-      <div className="flex gap-1 border-b border-border">
-        {tabs.map(({ path, label, icon: Icon, badge }) => (
-          <button
-            key={path}
-            onClick={() => navigate(path)}
-            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === path ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <Icon className="w-4 h-4" />
-            {label}
-            {badge && (
-              <Badge className="text-xs py-0 px-1 bg-blue-500/10 text-blue-400 border-blue-500/30 ml-1">{badge}</Badge>
-            )}
-          </button>
-        ))}
-      </div>
+        {/* タブナビ */}
+        <div className="flex gap-1 border-b border-border">
+          {tabs.map(({ path, label, icon: Icon, badge }) => (
+            <button
+              key={path}
+              onClick={() => navigate(path)}
+              className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === path ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              {label}
+              {badge && (
+                <Badge className="text-xs py-0 px-1 bg-blue-500/10 text-blue-400 border-blue-500/30 ml-1">{badge}</Badge>
+              )}
+            </button>
+          ))}
+        </div>
 
-      {/* コンテンツ */}
-      {activeTab === "/settings/account" && <AccountTab />}
-      {activeTab === "/settings/wizard"  && <WizardTab />}
-      {activeTab === "/settings/manual"  && <ManualTab />}
-    </div>
+        {/* コンテンツ */}
+        {activeTab === "/settings/account" && <AccountTab />}
+        {activeTab === "/settings/wizard"  && <WizardTab />}
+        {activeTab === "/settings/manual"  && <ManualTab />}
+      </div>
+    </DashboardLayout>
   );
 }

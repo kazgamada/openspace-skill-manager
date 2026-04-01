@@ -275,17 +275,22 @@
 
 ## v6 全機能実装
 
-- [ ] DBスキーマ: user_settingsにcrawl設定カラム追加（crawlEnabled, crawlIntervalHours, crawlKeywords, crawlSearchPath, crawlExcludeRepos, crawlMinStars, crawlMinForks, crawlMaxAgeDays, crawlMinSkillLength, crawlDuplicatePolicy, crawlLanguageFilter, crawlDailyLimit, crawlRankBy, crawlRateLimitProtection, crawlDuplicateWindowDays）
-- [ ] DBスキーマ: user_settingsにStep2/Step4設定値カラム追加（syncIntervalHours, syncBranch, evolutionSimilarityThreshold, evolutionCheckIntervalHours）
-- [ ] DBマイグレーション実行（ALTER TABLE）
-- [ ] API: settings.getCrawlSettings / saveCrawlSettings 追加
-- [ ] API: settings.getSyncSettings / saveSyncSettings 追加（Step2永続化）
-- [ ] API: settings.getEvolutionSettings / saveEvolutionSettings 追加（Step4永続化）
-- [ ] ウィザードUI: 7ステップ・2エリア構成に刷新（マイスキル設定Step1〜4 / スキル広場設定Step5〜7）
-- [ ] ウィザードUI: Step1をマイスキル用GitHubトークンのみに絞る（監視先リストをStep5に移動）
-- [ ] ウィザードUI: Step5に監視先リストを移動（Step1から分離）
-- [ ] ウィザードUI: Step6に回遊設定3セクション新規実装（クロール動作・スキル条件・取得条件）
-- [ ] ウィザードUI: Step2（同期スケジュール）の設定値をDBに保存
-- [ ] ウィザードUI: Step4（進化提案設定）の設定値をDBに保存
-- [ ] github-crawl.tsへの条件フィルター適用（crawlMinStars, crawlMinForks, crawlMaxAgeDays, crawlMinSkillLength, crawlDailyLimit, crawlRankBy等）
-- [ ] バッジ自動付与ロジック（スキル作成時→new, 修復完了時→repaired, 進化提案適用時→derived）
+- [x] DBスキーマ: user_settingsにcrawl設定カラム追加（crawlEnabled, crawlIntervalHours, crawlKeywords, crawlSearchPath, crawlExcludeRepos, crawlMinStars, crawlMinForks, crawlMaxAgeDays, crawlMinSkillLength, crawlDuplicatePolicy, crawlLanguageFilter, crawlDailyLimit, crawlRankBy, crawlRateLimitProtection, crawlDuplicateWindowDays）
+- [x] DBスキーマ: user_settingsにStep2/Step4設定値カラム追加（syncIntervalHours, syncBranch, evolutionSimilarityThreshold, evolutionCheckIntervalHours）
+- [x] DBマイグレーション実行（ALTER TABLE）
+- [x] API: settings.getCrawlSettings / saveCrawlSettings 追加
+- [x] API: settings.getSyncSettings / saveSyncSettings 追加（Step2永続化）
+- [x] API: settings.getEvolutionSettings / saveEvolutionSettings 追加（Step4永続化）
+- [x] ウィザードUI: 7ステップ・2エリア構成に刷新（マイスキル設定Step1〜4 / スキル広場設定Step5〜7）
+- [x] ウィザードUI: Step1をマイスキル用GitHubトークンのみに絞る（監視先リストをStep5に移動）
+- [x] ウィザードUI: Step5に監視先リストを移動（Step1から分離）
+- [x] ウィザードUI: Step6に回遊設定3セクション新規実装（クロール動作・スキル条件・取得条件）
+- [x] ウィザードUI: Step2（同期スケジュール）の設定値をDBに保存
+- [x] ウィザードUI: Step4（進化提案設定）の設定値をDBに保存
+- [x] github-crawl.tsへの条件フィルター適用（crawlMinStars, crawlMinForks, crawlMaxAgeDays, crawlMinSkillLength, crawlDailyLimit, crawlRankBy等）
+- [x] バッジ自動付与ロジック（スキル作成時→new, 修復完了時→repaired, 進化提案適用時→derived）
+
+## バグ修正: 設定メニューで左メインメニューが消える問題
+
+- [x] UserSettings.tsx: DashboardLayoutを使用して左メインメニューを常時表示（設定ページ内でDashboardLayoutを独自実装しているため消えている）
+- [x] AdminSettings.tsx: 同様に確認（すでにDashboardLayoutを正しく使用済みのため修正不要）
