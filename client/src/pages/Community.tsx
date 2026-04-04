@@ -82,6 +82,20 @@ function SyncStatusBadge({ status }: { status: string }) {
   return <Badge variant="outline" className={`text-[10px] ${className}`}>{label}</Badge>;
 }
 
+// ─── おすすめプリセット定義 ───────────────────────────────────────────────────
+
+const SOURCE_PRESETS = [
+  { name: "everything-claude-code", repoOwner: "affaan-m",        repoName: "everything-claude-code",  skillsPath: "skills", branch: "main", desc: "136スキル収録の定番コレクション" },
+  { name: "claude-mem",             repoOwner: "thedotmack",       repoName: "claude-mem",              skillsPath: "",       branch: "main", desc: "記憶・コンテキスト管理スキル" },
+  { name: "ui-ux-pro-max-skill",    repoOwner: "nextlevelbuilder", repoName: "ui-ux-pro-max-skill",     skillsPath: "",       branch: "main", desc: "UI/UXデザイン特化スキル" },
+  { name: "n8n-mcp",                repoOwner: "czlonkowski",      repoName: "n8n-mcp",                 skillsPath: "",       branch: "main", desc: "n8n ワークフロー自動化" },
+  { name: "obsidian-skills",        repoOwner: "kepano",           repoName: "obsidian-skills",         skillsPath: "skills", branch: "main", desc: "Obsidian連携スキルセット" },
+  { name: "LightRAG",               repoOwner: "HKUDS",            repoName: "LightRAG",                skillsPath: "",       branch: "main", desc: "軽量RAGパイプラインスキル" },
+  { name: "superpowers",            repoOwner: "obra",             repoName: "superpowers",             skillsPath: "",       branch: "main", desc: "汎用スーパーパワースキル集" },
+  { name: "awesome-claude-code",    repoOwner: "hesreallyhim",     repoName: "awesome-claude-code",     skillsPath: "",       branch: "main", desc: "厳選Awesomeリスト" },
+  { name: "get-shit-done",          repoOwner: "gsd-build",        repoName: "get-shit-done",           skillsPath: "",       branch: "main", desc: "タスク実行特化GSDスキル" },
+] as const;
+
 // ─── ソース追加ダイアログ ────────────────────────────────────────────────────
 
 function AddSourceDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -106,13 +120,13 @@ function AddSourceDialog({ open, onClose }: { open: boolean; onClose: () => void
     onError: (e) => toast.error(e.message),
   });
 
-  const applyPreset = () => {
+  const applyPreset = (preset: typeof SOURCE_PRESETS[number]) => {
     setForm({
-      name: "everything-claude-code",
-      repoOwner: "affaan-m",
-      repoName: "everything-claude-code",
-      skillsPath: "skills",
-      branch: "main",
+      name: preset.name,
+      repoOwner: preset.repoOwner,
+      repoName: preset.repoName,
+      skillsPath: preset.skillsPath,
+      branch: preset.branch,
       autoSync: true,
       syncIntervalHours: 6,
     });
@@ -129,15 +143,29 @@ function AddSourceDialog({ open, onClose }: { open: boolean; onClose: () => void
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/5 border border-primary/20">
-            <Github className="w-4 h-4 text-primary shrink-0" />
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium">おすすめ: everything-claude-code</p>
-              <p className="text-[10px] text-muted-foreground truncate">affaan-m/everything-claude-code · 136スキル</p>
+          <div className="space-y-1.5">
+            <p className="text-xs text-muted-foreground font-medium flex items-center gap-1.5">
+              <Github className="w-3.5 h-3.5" />おすすめリポジトリ（クリックで入力）
+            </p>
+            <div className="max-h-44 overflow-y-auto space-y-1 pr-1">
+              {SOURCE_PRESETS.map((preset) => (
+                <button
+                  key={preset.name}
+                  type="button"
+                  onClick={() => applyPreset(preset)}
+                  className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-left transition-colors
+                    ${form.name === preset.name
+                      ? "bg-primary/10 border-primary/40 text-primary"
+                      : "bg-muted/30 border-border hover:bg-primary/5 hover:border-primary/20"}`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] font-medium truncate">{preset.repoOwner}/{preset.repoName}</p>
+                    <p className="text-[10px] text-muted-foreground truncate">{preset.desc}</p>
+                  </div>
+                  {form.name === preset.name && <span className="text-[10px] text-primary shrink-0">選択中</span>}
+                </button>
+              ))}
             </div>
-            <Button size="sm" variant="outline" className="h-7 text-[10px] shrink-0" onClick={applyPreset}>
-              適用
-            </Button>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
