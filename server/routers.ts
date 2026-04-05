@@ -2366,7 +2366,7 @@ const evolutionRouter = router({
       const db = await getDb();
       if (!db) return [];
       const status = input?.status ?? "pending";
-      const [rows] = await db.execute(
+      const { rows } = await db.execute(
         sql`SELECT id, mySkillId, mySkillName, publicSkillIds, publicSkillNames,
                 reason, evolutionScore, status, createdAt
          FROM skill_evolution_proposals
@@ -2391,7 +2391,7 @@ const evolutionRouter = router({
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-      const [rows] = await db.execute(
+      const { rows } = await db.execute(
         sql`SELECT * FROM skill_evolution_proposals WHERE id = ${input.proposalId} AND userId = ${ctx.user.id}`
       );
       const row = (rows as unknown as Array<Record<string, unknown>>)[0];
@@ -2410,7 +2410,7 @@ const evolutionRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
       // 提案を取得
-      const [rows] = await db.execute(
+      const { rows } = await db.execute(
         sql`SELECT * FROM skill_evolution_proposals WHERE id = ${input.proposalId} AND userId = ${ctx.user.id} AND status = 'pending'`
       );
       const proposal = (rows as unknown as Array<Record<string, unknown>>)[0];

@@ -1,5 +1,5 @@
 import { and, desc, eq, like, or, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
+import { drizzle } from "drizzle-orm/node-postgres";
 import {
   CommunitySkill,
   ExecutionLog,
@@ -74,7 +74,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 
   if (Object.keys(updateSet).length === 0) updateSet.lastSignedIn = new Date();
 
-  await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
+  await db.insert(users).values(values).onConflictDoUpdate({ target: users.openId, set: updateSet });
 }
 
 export async function getUserByOpenId(openId: string) {
@@ -267,7 +267,8 @@ export async function getCommunitySkills(opts?: {
 export async function upsertCommunitySkill(data: InsertCommunitySkill): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.insert(communitySkills).values(data).onDuplicateKeyUpdate({
+  await db.insert(communitySkills).values(data).onConflictDoUpdate({
+    target: communitySkills.id,
     set: {
       name: data.name,
       description: data.description,
@@ -668,8 +669,8 @@ export async function getUserIntegrations(userId: number): Promise<UserIntegrati
 export async function addUserIntegration(data: Omit<InsertUserIntegration, "id" | "createdAt" | "updatedAt">): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(userIntegrations).values(data);
-  return (result[0] as { insertId: number }).insertId;
+  const result = await db.insert(userIntegrations).values(data).returning({ id: userIntegrations.id });
+  return result[0].id;
 }
 
 export async function updateUserIntegration(id: number, userId: number, data: Partial<Pick<UserIntegration, "label" | "token" | "config" | "status" | "lastTestedAt">>): Promise<void> {
@@ -691,8 +692,8 @@ export async function deleteUserIntegration(id: number, userId: number): Promise
 export async function createGithubSyncLog(userId: number): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(githubSyncLogs).values({ userId, status: "running", startedAt: new Date() });
-  return (result[0] as { insertId: number }).insertId;
+  const result = await db.insert(githubSyncLogs).values({ userId, status: "running", startedAt: new Date() }).returning({ id: githubSyncLogs.id });
+  return result[0].id;
 }
 
 export async function updateGithubSyncLog(
