@@ -1,0 +1,44 @@
+services:
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: openspace
+      MYSQL_USER: appuser
+      MYSQL_PASSWORD: apppassword
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: mysql://appuser:apppassword@db:3306/openspace
+      JWT_SECRET: change-me-to-a-random-secret
+      LOCAL_ADMIN_EMAIL: admin@example.com
+      LOCAL_ADMIN_PASSWORD: changeme
+      LOCAL_ADMIN_NAME: Admin
+      # Gemini / Forge API (optional — enables AI features)
+      # BUILT_IN_FORGE_API_URL: https://...
+      # BUILT_IN_FORGE_API_KEY: ...
+      # Manus OAuth (optional — omit to use local login)
+      # OAUTH_SERVER_URL: https://...
+      # VITE_APP_ID: ...
+      # VITE_OAUTH_PORTAL_URL: https://...
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  mysql_data:

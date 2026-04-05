@@ -12,10 +12,13 @@ import Community from "./pages/Community";
 import AdminSettings from "./pages/AdminSettings";
 import UserSettings from "./pages/UserSettings";
 import ClaudeIntegration from "./pages/ClaudeIntegration";
+import LocalLogin from "./pages/LocalLogin";
 
 function Router() {
   return (
     <Switch>
+      {/* ローカル認証ログインページ */}
+      <Route path="/login" component={LocalLogin} />
       <Route path="/" component={Dashboard} />
       <Route path="/dashboard" component={Dashboard} />
       {/* マイスキル */}
