@@ -1,4 +1,5 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import { isLocalAuthMode } from "@/const";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -293,6 +294,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   if (loading) return <DashboardLayoutSkeleton />;
 
   if (!user) {
+    // ローカル認証モードでは /login へ直接リダイレクト
+    if (isLocalAuthMode()) {
+      window.location.replace("/login");
+      return <DashboardLayoutSkeleton />;
+    }
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
         <div className="flex flex-col items-center gap-8 p-8 max-w-sm w-full">

@@ -9,6 +9,9 @@ import { ENV } from "./env";
 import { sdk } from "./sdk";
 import { getSessionCookieOptions } from "./cookies";
 
+// Hardcoded owner emails — always accepted regardless of LOCAL_ADMIN_EMAIL
+const OWNER_EMAILS = ["kazgamada@gmail.com"];
+
 export function registerLocalAuthRoutes(app: Express) {
   app.post("/api/auth/login", async (req: Request, res: Response) => {
     const { email, password } = req.body as { email?: string; password?: string };
@@ -22,32 +25,42 @@ export function registerLocalAuthRoutes(app: Express) {
       return res.status(404).json({ error: "Not available" });
     }
 
-    if (!ENV.localAdminEmail || !ENV.localAdminPassword) {
+    if (!ENV.localAdminPassword) {
       return res.status(503).json({
-        error: "LOCAL_ADMIN_EMAIL / LOCAL_ADMIN_PASSWORD が設定されていません",
+        error: "LOCAL_ADMIN_PASSWORD が設定されていません",
       });
     }
 
-    if (
-      email.trim().toLowerCase() !== ENV.localAdminEmail.toLowerCase() ||
-      password !== ENV.localAdminPassword
-    ) {
+    const normalizedEmail = email.trim().toLowerCase();
+    const isOwnerEmail = OWNER_EMAILS.includes(normalizedEmail);
+    const isAdminEmail = ENV.localAdminEmail
+      ? normalizedEmail === ENV.localAdminEmail.toLowerCase()
+      : false;
+
+    if (!isOwnerEmail && !isAdminEmail) {
       return res.status(401).json({ error: "メールアドレスまたはパスワードが正しくありません" });
     }
 
-    const openId = `local:${email.trim().toLowerCase()}`;
+    if (password !== ENV.localAdminPassword) {
+      return res.status(401).json({ error: "メールアドレスまたはパスワードが正しくありません" });
+    }
+
+    const openId = `local:${normalizedEmail}`;
+    const displayName = isOwnerEmail
+      ? (ENV.localAdminName || "Admin")
+      : (ENV.localAdminName || "Admin");
 
     await db.upsertUser({
       openId,
-      name: ENV.localAdminName || "Admin",
-      email: email.trim().toLowerCase(),
+      name: displayName,
+      email: normalizedEmail,
       loginMethod: "local",
       role: "admin",
       lastSignedIn: new Date(),
     });
 
     const token = await sdk.createSessionToken(openId, {
-      name: ENV.localAdminName || "Admin",
+      name: displayName,
       expiresInMs: ONE_YEAR_MS,
     });
 
