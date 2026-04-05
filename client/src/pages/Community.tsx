@@ -10,7 +10,7 @@ import {
   RefreshCw, Plus, Clock, Database, Settings2,
   ChevronRight, ExternalLink,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 import { formatDistanceToNow } from "date-fns";
@@ -85,30 +85,171 @@ function SyncStatusBadge({ status }: { status: string }) {
 // ─── おすすめプリセット定義 ───────────────────────────────────────────────────
 
 const SOURCE_PRESETS = [
-  { name: "everything-claude-code", repoOwner: "affaan-m",        repoName: "everything-claude-code",  skillsPath: "skills", branch: "main", desc: "136スキル収録の定番コレクション" },
-  { name: "claude-mem",             repoOwner: "thedotmack",       repoName: "claude-mem",              skillsPath: "",       branch: "main", desc: "記憶・コンテキスト管理スキル" },
-  { name: "ui-ux-pro-max-skill",    repoOwner: "nextlevelbuilder", repoName: "ui-ux-pro-max-skill",     skillsPath: "",       branch: "main", desc: "UI/UXデザイン特化スキル" },
-  { name: "n8n-mcp",                repoOwner: "czlonkowski",      repoName: "n8n-mcp",                 skillsPath: "",       branch: "main", desc: "n8n ワークフロー自動化" },
-  { name: "obsidian-skills",        repoOwner: "kepano",           repoName: "obsidian-skills",         skillsPath: "skills", branch: "main", desc: "Obsidian連携スキルセット" },
-  { name: "LightRAG",               repoOwner: "HKUDS",            repoName: "LightRAG",                skillsPath: "",       branch: "main", desc: "軽量RAGパイプラインスキル" },
-  { name: "superpowers",            repoOwner: "obra",             repoName: "superpowers",             skillsPath: "",       branch: "main", desc: "汎用スーパーパワースキル集" },
-  { name: "awesome-claude-code",    repoOwner: "hesreallyhim",     repoName: "awesome-claude-code",     skillsPath: "",       branch: "main", desc: "厳選Awesomeリスト" },
-  { name: "get-shit-done",          repoOwner: "gsd-build",        repoName: "get-shit-done",           skillsPath: "",       branch: "main", desc: "タスク実行特化GSDスキル" },
+  { name: "everything-claude-code",    repoOwner: "affaan-m",          repoName: "everything-claude-code",    skillsPath: "skills", branch: "main", desc: "136スキル収録の定番コレクション" },
+  { name: "claude-mem",                repoOwner: "thedotmack",         repoName: "claude-mem",                skillsPath: "",       branch: "main", desc: "記憶・コンテキスト管理スキル" },
+  { name: "ui-ux-pro-max-skill",       repoOwner: "nextlevelbuilder",   repoName: "ui-ux-pro-max-skill",       skillsPath: "",       branch: "main", desc: "UI/UXデザイン特化スキル" },
+  { name: "n8n-mcp",                   repoOwner: "czlonkowski",        repoName: "n8n-mcp",                   skillsPath: "",       branch: "main", desc: "n8n ワークフロー自動化" },
+  { name: "obsidian-skills",           repoOwner: "kepano",             repoName: "obsidian-skills",           skillsPath: "skills", branch: "main", desc: "Obsidian連携スキルセット" },
+  { name: "LightRAG",                  repoOwner: "HKUDS",              repoName: "LightRAG",                  skillsPath: "",       branch: "main", desc: "軽量RAGパイプラインスキル" },
+  { name: "superpowers",               repoOwner: "obra",               repoName: "superpowers",               skillsPath: "",       branch: "main", desc: "汎用スーパーパワースキル集" },
+  { name: "awesome-claude-code",       repoOwner: "hesreallyhim",       repoName: "awesome-claude-code",       skillsPath: "",       branch: "main", desc: "厳選Awesomeリスト" },
+  { name: "get-shit-done",             repoOwner: "gsd-build",          repoName: "get-shit-done",             skillsPath: "",       branch: "main", desc: "タスク実行特化GSDスキル" },
+  { name: "claude-code-ultimate-guide",repoOwner: "FlorianBruniaux",    repoName: "claude-code-ultimate-guide",skillsPath: "",       branch: "main", desc: "2.3万行ドキュメント・219テンプレート" },
+  { name: "antigravity-awesome-skills",repoOwner: "sickn33",            repoName: "antigravity-awesome-skills",skillsPath: "",       branch: "main", desc: "1,200以上の即使えるスキル集" },
+  { name: "Claude-Agent-Blueprints",   repoOwner: "danielrosehill",     repoName: "Claude-Agent-Blueprints",   skillsPath: "",       branch: "main", desc: "75以上のエージェントテンプレート" },
+  { name: "voicemode",                 repoOwner: "mbailey",            repoName: "voicemode",                 skillsPath: "",       branch: "main", desc: "音声会話 MCP サーバー" },
+  { name: "awesome-claude-plugins",    repoOwner: "ComposioHQ",         repoName: "awesome-claude-plugins",    skillsPath: "",       branch: "main", desc: "9,000以上のプラグインインデックス" },
 ] as const;
+
+// ─── おすすめリソース一覧（UI表示用） ──────────────────────────────────────────
+
+type ResourceType = "skill" | "mcp" | "rag" | "collection" | "docs" | "agent" | "voice";
+
+interface RecommendedResource {
+  id: string;
+  name: string;
+  label: string;
+  repoOwner: string;
+  repoName: string;
+  skillsPath: string;
+  branch: string;
+  type: ResourceType;
+  benefit: string;
+}
+
+const RECOMMENDED_RESOURCES: RecommendedResource[] = [
+  {
+    id: "claude-mem",
+    name: "claude-mem",
+    label: "Claude Mem",
+    repoOwner: "thedotmack", repoName: "claude-mem",
+    skillsPath: "", branch: "main", type: "skill",
+    benefit: "セッション間で記憶を永続化。毎回コードを再説明する手間をなくす",
+  },
+  {
+    id: "ui-ux-pro-max",
+    name: "ui-ux-pro-max-skill",
+    label: "UI UX Pro Max",
+    repoOwner: "nextlevelbuilder", repoName: "ui-ux-pro-max-skill",
+    skillsPath: "", branch: "main", type: "skill",
+    benefit: "50スタイル・161カラーパレット・99のUXガイドライン。ClaudeのUI生成品質を劇的に向上",
+  },
+  {
+    id: "n8n-mcp",
+    name: "n8n-mcp",
+    label: "n8n-MCP",
+    repoOwner: "czlonkowski", repoName: "n8n-mcp",
+    skillsPath: "", branch: "main", type: "mcp",
+    benefit: "400以上のn8n統合をMCP経由でClaudeに接続。ノーコード自動化の最短経路",
+  },
+  {
+    id: "lightraag",
+    name: "LightRAG",
+    label: "LightRAG",
+    repoOwner: "HKUDS", repoName: "LightRAG",
+    skillsPath: "", branch: "main", type: "rag",
+    benefit: "グラフ＋ベクトルRAGで大規模コードベースを構造的に理解させる。検索精度が向上",
+  },
+  {
+    id: "everything-claude-code",
+    name: "everything-claude-code",
+    label: "Everything Claude Code",
+    repoOwner: "affaan-m", repoName: "everything-claude-code",
+    skillsPath: "skills", branch: "main", type: "skill",
+    benefit: "スキル・直感・セキュリティスキャン・多言語対応を網羅するフルエージェントハーネス",
+  },
+  {
+    id: "awesome-claude-code",
+    name: "awesome-claude-code",
+    label: "Awesome Claude Code",
+    repoOwner: "hesreallyhim", repoName: "awesome-claude-code",
+    skillsPath: "", branch: "main", type: "collection",
+    benefit: "コミュニティ厳選のスキル・hooks・スラッシュコマンド・オーケストレーターが一覧で確認できるコミュニティ聖典",
+  },
+  {
+    id: "superpowers",
+    name: "superpowers",
+    label: "Superpowers",
+    repoOwner: "obra", repoName: "superpowers",
+    skillsPath: "", branch: "main", type: "skill",
+    benefit: "1行も書く前に構造的思考を強制。設計品質を底上げするメタスキル",
+  },
+  {
+    id: "claude-code-ultimate-guide",
+    name: "claude-code-ultimate-guide",
+    label: "Claude Code Ultimate Guide",
+    repoOwner: "FlorianBruniaux", repoName: "claude-code-ultimate-guide",
+    skillsPath: "", branch: "main", type: "docs",
+    benefit: "2.3万行のドキュメント・219テンプレート・271クイズ。初心者から上級者まで体系的に学べる",
+  },
+  {
+    id: "antigravity-awesome-skills",
+    name: "antigravity-awesome-skills",
+    label: "Antigravity Awesome Skills",
+    repoOwner: "sickn33", repoName: "antigravity-awesome-skills",
+    skillsPath: "", branch: "main", type: "collection",
+    benefit: "1,200以上の即使えるスキル。最大規模コレクションのひとつで即戦力が豊富",
+  },
+  {
+    id: "claude-agent-blueprints",
+    name: "Claude-Agent-Blueprints",
+    label: "Claude Agent Blueprints",
+    repoOwner: "danielrosehill", repoName: "Claude-Agent-Blueprints",
+    skillsPath: "", branch: "main", type: "agent",
+    benefit: "コーディング以外にも使える75以上のエージェントワークスペーステンプレート",
+  },
+  {
+    id: "voicemode",
+    name: "voicemode",
+    label: "VoiceMode MCP",
+    repoOwner: "mbailey", repoName: "voicemode",
+    skillsPath: "", branch: "main", type: "voice",
+    benefit: "Whisper＋KokoroでClaude Codeと自然言語で音声会話。ハンズフリー開発を実現",
+  },
+  {
+    id: "awesome-claude-plugins",
+    name: "awesome-claude-plugins",
+    label: "Awesome Claude Plugins",
+    repoOwner: "ComposioHQ", repoName: "awesome-claude-plugins",
+    skillsPath: "", branch: "main", type: "collection",
+    benefit: "9,000以上のリポジトリをインデックス化＆採用指標付き。実際に使われているプラグインを把握",
+  },
+];
+
+const RESOURCE_TYPE_META: Record<ResourceType, { label: string; className: string }> = {
+  skill:      { label: "Skill",      className: "border-primary/30 text-primary bg-primary/10" },
+  mcp:        { label: "MCP",        className: "border-purple-500/30 text-purple-400 bg-purple-500/10" },
+  rag:        { label: "RAG",        className: "border-cyan-500/30 text-cyan-400 bg-cyan-500/10" },
+  collection: { label: "Collection", className: "border-amber-500/30 text-amber-400 bg-amber-500/10" },
+  docs:       { label: "Docs",       className: "border-emerald-500/30 text-emerald-400 bg-emerald-500/10" },
+  agent:      { label: "Agent",      className: "border-orange-500/30 text-orange-400 bg-orange-500/10" },
+  voice:      { label: "Voice",      className: "border-rose-500/30 text-rose-400 bg-rose-500/10" },
+};
 
 // ─── ソース追加ダイアログ ────────────────────────────────────────────────────
 
-function AddSourceDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+interface AddSourcePreset {
+  name: string; repoOwner: string; repoName: string; skillsPath: string; branch: string;
+}
+
+function AddSourceDialog({ open, onClose, initialPreset }: { open: boolean; onClose: () => void; initialPreset?: AddSourcePreset }) {
   const utils = trpc.useUtils();
   const [form, setForm] = useState({
-    name: "",
-    repoOwner: "",
-    repoName: "",
-    skillsPath: "skills",
-    branch: "main",
+    name: initialPreset?.name ?? "",
+    repoOwner: initialPreset?.repoOwner ?? "",
+    repoName: initialPreset?.repoName ?? "",
+    skillsPath: initialPreset?.skillsPath ?? "skills",
+    branch: initialPreset?.branch ?? "main",
     autoSync: true,
     syncIntervalHours: 6,
   });
+
+  // initialPreset が変わったらフォームを更新（ダイアログが開くたびに反映）
+  useEffect(() => {
+    if (open && initialPreset) {
+      setForm((f) => ({ ...f, name: initialPreset.name, repoOwner: initialPreset.repoOwner, repoName: initialPreset.repoName, skillsPath: initialPreset.skillsPath, branch: initialPreset.branch }));
+    }
+  }, [open, initialPreset]);
 
   const addMutation = trpc.community.addSource.useMutation({
     onSuccess: (data) => {
@@ -212,6 +353,84 @@ function AddSourceDialog({ open, onClose }: { open: boolean; onClose: () => void
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ─── おすすめリソース一覧コンポーネント ─────────────────────────────────────────
+
+function RecommendedResourcesList() {
+  const [open, setOpen] = useState(true);
+  const [addOpen, setAddOpen] = useState(false);
+  const [selectedResource, setSelectedResource] = useState<RecommendedResource | null>(null);
+
+  const handleAdd = (res: RecommendedResource) => {
+    setSelectedResource(res);
+    setAddOpen(true);
+  };
+
+  return (
+    <div className="space-y-2">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors py-1"
+      >
+        <span className="flex items-center gap-1.5">
+          <Star className="w-3.5 h-3.5 text-amber-400" />
+          おすすめ GitHub リソース
+        </span>
+        <span className="text-[10px] font-normal opacity-60">{open ? "▲" : "▼"}</span>
+      </button>
+
+      {open && (
+        <div className="space-y-1.5">
+          {RECOMMENDED_RESOURCES.map((res) => {
+            const typeMeta = RESOURCE_TYPE_META[res.type];
+            return (
+              <div
+                key={res.id}
+                className="rounded-lg border border-border bg-muted/20 hover:bg-muted/40 transition-colors p-2.5 space-y-1"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[11px] font-semibold text-foreground truncate">{res.label}</span>
+                      <Badge variant="outline" className={`text-[9px] h-4 px-1.5 shrink-0 ${typeMeta.className}`}>{typeMeta.label}</Badge>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground font-mono truncate">{res.repoOwner}/{res.repoName}</p>
+                  </div>
+                </div>
+                <p className="text-[10px] text-muted-foreground leading-relaxed">{res.benefit}</p>
+                <div className="flex items-center gap-1.5 pt-0.5">
+                  <Button
+                    size="sm"
+                    className="h-5 text-[9px] px-2 gap-0.5 flex-1"
+                    onClick={() => handleAdd(res)}
+                  >
+                    <Plus className="w-2.5 h-2.5" />スキルに追加
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    className="h-5 w-5 shrink-0"
+                    onClick={() => window.open(`https://github.com/${res.repoOwner}/${res.repoName}`, "_blank")}
+                    title="GitHubで開く"
+                  >
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <AddSourceDialog
+        open={addOpen}
+        onClose={() => { setAddOpen(false); setSelectedResource(null); }}
+        initialPreset={selectedResource ?? undefined}
+      />
+    </div>
   );
 }
 
@@ -769,8 +988,11 @@ export default function Community() {
               </div>
             )}
           </div>
-          <div className="flex-1 overflow-y-auto p-3">
+          <div className="flex-1 overflow-y-auto p-3 space-y-4">
             <SourcesPanel />
+            <div className="border-t border-border/50 pt-3">
+              <RecommendedResourcesList />
+            </div>
           </div>
         </div>
 
