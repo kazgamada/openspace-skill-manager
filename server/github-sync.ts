@@ -235,7 +235,8 @@ export async function syncSkillSource(
                 lastSyncedAt: now,
                 cachedAt: now,
               })
-              .onDuplicateKeyUpdate({
+              .onConflictDoUpdate({
+                target: communitySkills.id,
                 set: {
                   name: meta.name,
                   description: meta.description,
