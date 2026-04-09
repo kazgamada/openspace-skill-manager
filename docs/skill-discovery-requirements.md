@@ -1,7 +1,8 @@
 # 世界のスキル自動収集システム — 要件定義書
 
-**バージョン:** 1.0  
+**バージョン:** 1.1  
 **作成日:** 2026-04-08  
+**更新日:** 2026-04-09（SKILL.md 以外のファイルタイプ追記）  
 **担当:** SaaS 機能追加
 
 ---
@@ -22,7 +23,7 @@
 
 ### 1.2 目指す姿
 
-> **「世界中の優れた SKILL.md を、複数のシグナルを組み合わせて自動収集・ランキングし、ユーザーが最適なスキルを即座に発見できるシステム」**
+> **「世界中の優れた Claude Code 関連ファイル（スキル・フック・コマンド・エージェント等）を、複数のシグナルを組み合わせて自動収集・ランキングし、ユーザーが最適なアセットを即座に発見・導入できるシステム」**
 
 ---
 
@@ -531,4 +532,329 @@ SCORE_WEIGHT_QUALITY=0.10
 
 ---
 
-*本要件定義書は 2026-04-08 時点の仕様策定結果です。実装前に API 利用規約・費用を再確認してください。*
+## 12. SKILL.md 以外の有用ファイルタイプの収集
+
+### 12.1 Claude Code のファイルエコシステム全体像
+
+Claude Code は SKILL.md 以外にも多数の設定ファイルを持つ。これらを収集することで、ユーザーが「スキルだけでなく開発環境全体」をワンクリックで取り込めるようになる。
+
+```
+.claude/
+├── settings.json        ← フック・パーミッション設定
+├── commands/            ← カスタムスラッシュコマンド
+│   ├── commit.md
+│   └── review-pr.md
+├── agents/              ← エージェント定義
+│   └── code-reviewer.md
+└── skills/              ← ローカルスキルディレクトリ（既存対応）
+    └── my-skill.md
+
+.mcp.json                ← プロジェクトローカル MCP サーバー設定
+CLAUDE.md                ← プロジェクト指示書
+```
+
+### 12.2 収集対象ファイルタイプ一覧
+
+| ファイルタイプ | パターン | 現状 | 優先度 |
+|-------------|---------|------|--------|
+| スキル | `SKILL.md` / `.claude/skills/*.md` | **対応済み** | — |
+| フック設定 | `.claude/settings.json`（hooks セクション） | **未対応** | 高 |
+| カスタムコマンド | `.claude/commands/*.md` | **未対応** | 高 |
+| エージェント定義 | `.claude/agents/*.md` | **未対応** | 高 |
+| MCP 設定 | `.mcp.json` / `~/.claude.json` | 部分対応（パースのみ） | 中 |
+| プロジェクト指示書 | `CLAUDE.md` | **未対応** | 中 |
+
+---
+
+### 12.3 フック設定（`.claude/settings.json` の hooks セクション）
+
+#### 概要
+
+Claude Code の `settings.json` には `hooks` キーに PreToolUse / PostToolUse / Stop 等のライフサイクルフックを定義できる。収集・共有することで「よく使われるフックのレシピ」をコミュニティで流通させられる。
+
+#### 収集データ構造
+
+```json
+{
+  "hookType": "PostToolUse",
+  "matcher": "Write|Edit",
+  "command": "prettier --write $FILE",
+  "description": "ファイル保存時に自動フォーマット",
+  "author": "kazgamada",
+  "stars": 142,
+  "sourceRepo": "kazgamada/my-claude-config"
+}
+```
+
+#### 収集ロジック
+
+1. GitHub で `.claude/settings.json` を検索（`filename:settings.json path:.claude`）
+2. ファイルをダウンロードして JSON パース
+3. `hooks` キーが存在するファイルのみ対象
+4. フックコマンドが実行可能・安全か基本チェック（危険コマンドのブロックリスト）
+5. フック単位でレコードを作成（1ファイルから複数フックを抽出）
+
+#### スコアリング
+
+```
+hookScore = リポジトリの stars × 0.5
+          + コマンドの複雑性スコア（pipe/条件分岐で加点）× 0.2
+          + 説明文の充実度 × 0.3
+```
+
+#### セキュリティ考慮
+
+フックはシェルコマンドを直接実行するため、収集・表示時に以下のチェックが必須：
+
+| チェック | 対象コマンド | 処理 |
+|---------|------------|------|
+| 危険コマンドブロック | `rm -rf`, `curl ... \| sh`, `eval` 等 | 収集拒否 |
+| ネットワーク送信検出 | `curl`, `wget`, `nc` 等を含む | 警告バッジ表示 |
+| 秘密情報パターン | `$API_KEY`, `$TOKEN` 等 | マスク表示 |
+| ユーザー確認必須 | 上記以外の外部コマンド | インストール前に差分表示 |
+
+---
+
+### 12.4 カスタムスラッシュコマンド（`.claude/commands/*.md`）
+
+#### 概要
+
+`.claude/commands/` ディレクトリに置いた Markdown ファイルが `/filename` でスラッシュコマンドとして呼び出せる。「コミット作成」「PR レビュー」「テスト実行」などの定型タスクを共有できる。
+
+#### 収集データ構造
+
+```json
+{
+  "commandName": "commit",
+  "fileName": "commit.md",
+  "description": "変更内容を分析して適切なコミットメッセージを生成",
+  "content": "## Instructions\n...",
+  "arguments": ["--amend", "--no-verify"],
+  "allowedTools": ["Bash(git:*)", "Read"],
+  "sourceRepo": "owner/repo",
+  "stars": 89
+}
+```
+
+#### 収集ロジック
+
+1. GitHub で `.claude/commands/` ディレクトリを持つリポジトリを検索
+   ```
+   filename:*.md path:.claude/commands
+   ```
+2. ファイル名をコマンド名として使用（拡張子なし）
+3. SKILL.md と同様の Markdown パーサーでフロントマターを取得
+4. `allowed-tools` フィールドがあればパース
+
+#### 既存スキルとの差異
+
+| 項目 | SKILL.md | コマンド (.claude/commands/) |
+|------|----------|---------------------------|
+| 呼び出し方 | Claude が自律判断 | `/コマンド名` で明示的呼び出し |
+| ファイル名 | 任意 | コマンド名と対応（`commit.md` → `/commit`） |
+| 引数 | なし | `$ARGUMENTS` で受け取り可 |
+| スコープ | グローバル | プロジェクトローカル or グローバル |
+
+---
+
+### 12.5 エージェント定義（`.claude/agents/*.md`）
+
+#### 概要
+
+`.claude/agents/` ディレクトリに置いた Markdown がサブエージェントとして利用できる。特定ツールセットと専門性を持つエージェントをコミュニティで共有する。
+
+#### 収集データ構造
+
+```json
+{
+  "agentName": "code-reviewer",
+  "description": "コードレビューに特化したエージェント",
+  "tools": ["Read", "Grep", "Glob"],
+  "systemPrompt": "...",
+  "model": "claude-opus-4-6",
+  "sourceRepo": "owner/repo",
+  "stars": 203
+}
+```
+
+#### 収集ロジック
+
+1. GitHub で `.claude/agents/` を検索
+   ```
+   filename:*.md path:.claude/agents
+   ```
+2. フロントマターから `name`, `description`, `tools`, `model` を取得
+3. エージェントの専門分野をカテゴリとして推定（testing, review, docs 等）
+
+#### 品質チェック
+
+| チェック | 内容 |
+|---------|------|
+| tools 最小化 | 不必要に `Bash` や `Write` を持つエージェントは警告 |
+| system prompt 長さ | 50文字未満は品質不足 |
+| 禁止指示の検出 | プロンプトインジェクション的な内容の検出 |
+
+---
+
+### 12.6 MCP サーバー設定（`.mcp.json`）
+
+#### 概要
+
+プロジェクトルートの `.mcp.json` や `~/.claude.json` に MCP サーバーの起動設定が書かれる。「おすすめ MCP セット」としてコミュニティで共有する。
+
+#### 現状の対応
+
+`claude.parseMcpConfig` エンドポイントが既に `.mcp.json` のパースに対応している（`routers.ts`）。ただしコミュニティへの公開・検索は未実装。
+
+#### 新規収集ロジック
+
+1. GitHub で `.mcp.json` ファイルを検索
+   ```
+   filename:.mcp.json
+   ```
+2. JSON パースして `mcpServers` キーを取得
+3. サーバー名・コマンド・URLをメタデータとして保存
+4. 危険なコマンド（任意コード実行の可能性）をブロックリストで除外
+
+#### セキュリティ考慮（SKILL.md より厳格）
+
+MCP 設定はサーバー起動コマンドを含むため、フック以上に危険性が高い：
+
+| リスク | 対応 |
+|--------|------|
+| 任意コード実行 | コマンドの `exec`, `eval`, backtick を禁止 |
+| ネットワークエンドポイント | URL スキームを `https://` のみ許可 |
+| 環境変数注入 | `$HOME`, `$USER` 以外の変数参照を警告 |
+| インストール前確認 | 必ず diff 表示・ユーザー承認を要求 |
+
+---
+
+### 12.7 プロジェクト指示書（`CLAUDE.md`）
+
+#### 概要
+
+リポジトリルートや `.claude/` 内に置いた `CLAUDE.md` は、Claude Code がプロジェクト固有の文脈・ルールを読み込むためのファイル。「特定フレームワーク向け指示書」としてコミュニティで共有できる。
+
+#### 収集データ構造
+
+```json
+{
+  "fileName": "CLAUDE.md",
+  "title": "Next.js 15 プロジェクト指示書",
+  "targetFramework": "nextjs",
+  "description": "App Router、TypeScript、Tailwind の規約を定義",
+  "content": "## Build Commands\n...",
+  "wordCount": 420,
+  "sourceRepo": "owner/next-template",
+  "stars": 67
+}
+```
+
+#### 収集ロジック
+
+1. GitHub で `CLAUDE.md` を検索
+   ```
+   filename:CLAUDE.md
+   ```
+2. フレームワーク自動検出（`package.json` / `go.mod` 等の有無で判定）
+3. セクション構造を解析（Build Commands / Project Structure / Conventions 等）
+4. 文字数・セクション数で品質スコアを算出
+
+---
+
+### 12.8 アセットタイプ別 DB テーブル設計
+
+SKILL.md 以外のファイルは `community_skills` テーブルとは別に管理する。
+
+#### `community_assets` テーブル（新規・共通）
+
+| カラム | 型 | 説明 |
+|--------|----|----- |
+| `id` | VARCHAR(64) PK | UUID |
+| `assetType` | ENUM | `hook` / `command` / `agent` / `mcp_config` / `claude_md` |
+| `name` | VARCHAR(255) | アセット名 |
+| `description` | TEXT | 説明文 |
+| `content` | TEXT | ファイル本文 |
+| `metadata` | TEXT | タイプ別 JSON（tools配列, model, matcher 等） |
+| `author` | VARCHAR(128) | GitHubユーザー名 |
+| `sourceRepo` | VARCHAR(512) | 元リポジトリ |
+| `sourceFile` | VARCHAR(512) | 元ファイルパス |
+| `githubUrl` | VARCHAR(512) | GitHub 直リンク |
+| `stars` | INT | リポジトリスター数 |
+| `finalScore` | REAL | 統合スコア |
+| `isCurated` | BOOLEAN | 管理者選定済み |
+| `securityFlags` | TEXT | セキュリティ警告の JSON 配列 |
+| `isBlocked` | BOOLEAN | セキュリティ理由でブロック |
+| `installCount` | INT | OSM でのインストール数 |
+| `contentHash` | VARCHAR(64) | SHA256（重複検出） |
+| `cachedAt` | TIMESTAMP | 収集日時 |
+| `updatedAt` | TIMESTAMP | 最終更新 |
+
+---
+
+### 12.9 アセット別検索・インストール API
+
+| プロシージャ | 説明 |
+|------------|------|
+| `assets.list` | タイプ別アセット一覧（`assetType` フィルター） |
+| `assets.search` | 全文検索（name / description / metadata） |
+| `assets.install` | ユーザーのアセットライブラリに追加 |
+| `assets.getInstallInstructions` | インストール手順生成（コピペ用コマンド） |
+| `assets.preview` | アセット本文・セキュリティ警告プレビュー |
+| `admin.blockAsset` | セキュリティ理由でブロック |
+
+---
+
+### 12.10 UI 設計（スキル広場の拡張）
+
+現在「スキル広場」は SKILL.md 専用だが、タイプ切り替えタブを追加する。
+
+```
+スキル広場
+├── [スキル]      ← 現在の community_skills
+├── [フック]      ← hooks (settings.json から抽出)
+├── [コマンド]    ← .claude/commands/*.md
+├── [エージェント] ← .claude/agents/*.md
+├── [MCP]         ← .mcp.json
+└── [CLAUDE.md]   ← プロジェクト指示書
+```
+
+各タイプに共通の「インストール手順」モーダルを実装：
+
+```
+フックのインストール方法:
+1. .claude/settings.json を開く
+2. 以下を hooks セクションに追加:
+   [コードブロック + コピーボタン]
+3. Claude Code を再起動
+```
+
+---
+
+### 12.11 収集クエリ一覧（GitHub Code Search）
+
+| アセットタイプ | 検索クエリ |
+|-------------|-----------|
+| フック | `filename:settings.json path:.claude hooks` |
+| コマンド | `filename:*.md path:.claude/commands` |
+| エージェント | `filename:*.md path:.claude/agents` |
+| MCP 設定 | `filename:.mcp.json mcpServers` |
+| CLAUDE.md | `filename:CLAUDE.md` |
+| スキル（既存） | `filename:SKILL.md` |
+
+---
+
+### 12.12 フェーズ別実装追加
+
+前述の Phase 1〜5 に以下を追加：
+
+| Phase | 追加タスク |
+|-------|-----------|
+| Phase 2 | `community_assets` テーブル作成・フック収集・コマンド収集 |
+| Phase 3 | エージェント収集・スキル広場タブ拡張 UI |
+| Phase 4 | MCP 設定収集（セキュリティチェック強化後）・CLAUDE.md 収集 |
+| Phase 5 | アセット横断検索・「セット一括インストール」機能 |
+
+---
+
+*本要件定義書は 2026-04-09 に更新されました。*
