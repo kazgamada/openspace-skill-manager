@@ -857,4 +857,569 @@ SKILL.md 以外のファイルは `community_skills` テーブルとは別に管
 
 ---
 
-*本要件定義書は 2026-04-09 に更新されました。*
+---
+
+## 13. アセットのリポジトリ保存と外部ツール連携
+
+### 13.1 設計方針
+
+収集したアセットを「**DB（検索・配信）＋ Git リポジトリ（正規ソース・配布）**」の 2 層で管理する。
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        2 層アーキテクチャ                             │
+│                                                                      │
+│  [収集パイプライン]                                                    │
+│        │                                                             │
+│        ▼                                                             │
+│  [PostgreSQL DB]  ←→  高速検索・スコアリング・ユーザー管理              │
+│        │                                                             │
+│        │ 定期エクスポート（6時間毎）                                    │
+│        ▼                                                             │
+│  [Git リポジトリ / assets/]  ←→  正規ソース・バージョン管理・配布       │
+│        │                                                             │
+│        ├──► [Public REST API]   外部ツールから HTTP で取得             │
+│        ├──► [MCP Server]        Claude Code から直接クエリ            │
+│        ├──► [npm パッケージ]     TypeScript SDK で programmatic アクセス│
+│        └──► [CLI ツール]         ターミナルから 1 コマンドでインストール │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**DB が正規ソース** でなく **ファイルが正規ソース** にする理由：
+- OSM サーバーが停止していても `git clone` だけで全アセットを取得できる
+- Git の差分・履歴がそのままバージョン管理になる
+- GitHub 上で PR レビューによるアセット品質管理ができる
+- 他ツールが API キー不要でファイルを直接参照できる
+
+---
+
+### 13.2 リポジトリ内ファイル構造
+
+```
+assets/                          ← 収集アセットのルート
+│
+├── index.json                   ← 全アセットの軽量メタデータ一覧
+│
+├── skills/                      ← SKILL.md
+│   ├── _index.json              ← スキル一覧（id, name, score, tags）
+│   ├── code-reviewer/
+│   │   ├── SKILL.md             ← 本文
+│   │   └── meta.json            ← スコア・出典・更新日
+│   └── commit-helper/
+│       ├── SKILL.md
+│       └── meta.json
+│
+├── hooks/                       ← フック設定
+│   ├── _index.json
+│   ├── format-on-save/
+│   │   ├── hook.json            ← settings.json の hooks エントリ
+│   │   └── meta.json
+│   └── auto-test/
+│       ├── hook.json
+│       └── meta.json
+│
+├── commands/                    ← カスタムスラッシュコマンド
+│   ├── _index.json
+│   ├── commit/
+│   │   ├── command.md
+│   │   └── meta.json
+│   └── review-pr/
+│       ├── command.md
+│       └── meta.json
+│
+├── agents/                      ← エージェント定義
+│   ├── _index.json
+│   ├── code-reviewer/
+│   │   ├── agent.md
+│   │   └── meta.json
+│   └── test-writer/
+│       ├── agent.md
+│       └── meta.json
+│
+├── mcp/                         ← MCP サーバー設定
+│   ├── _index.json
+│   ├── github-mcp/
+│   │   ├── config.json          ← .mcp.json エントリ
+│   │   └── meta.json
+│   └── filesystem-mcp/
+│       ├── config.json
+│       └── meta.json
+│
+└── claude-md/                   ← プロジェクト指示書テンプレート
+    ├── _index.json
+    ├── nextjs-app-router/
+    │   ├── CLAUDE.md
+    │   └── meta.json
+    └── rust-cli/
+        ├── CLAUDE.md
+        └── meta.json
+```
+
+#### `meta.json` の共通フォーマット
+
+```json
+{
+  "id": "code-reviewer-abc123",
+  "assetType": "skill",
+  "name": "code-reviewer",
+  "description": "コードレビューに特化したスキル",
+  "author": "kazgamada",
+  "sourceRepo": "kazgamada/claude-skills",
+  "sourceFile": ".claude/skills/code-reviewer.md",
+  "githubUrl": "https://github.com/...",
+  "stars": 142,
+  "forks": 23,
+  "finalScore": 87.4,
+  "scoreBreakdown": {
+    "github": 72.1, "x": 45.0, "osm": 91.3, "quality": 88.0
+  },
+  "tags": ["code-review", "typescript", "Read", "Grep"],
+  "category": "development",
+  "isCurated": false,
+  "securityFlags": [],
+  "installCount": 891,
+  "osmRating": 4.3,
+  "license": "MIT",
+  "collectedAt": "2026-04-09T00:00:00Z",
+  "updatedAt": "2026-04-09T06:00:00Z"
+}
+```
+
+#### `assets/index.json` の構造（全アセット一覧）
+
+```json
+{
+  "version": "1",
+  "generatedAt": "2026-04-09T06:00:00Z",
+  "stats": {
+    "skills": 2847,
+    "hooks": 312,
+    "commands": 189,
+    "agents": 94,
+    "mcp": 67,
+    "claudeMd": 231
+  },
+  "assets": [
+    {
+      "id": "code-reviewer-abc123",
+      "assetType": "skill",
+      "name": "code-reviewer",
+      "finalScore": 87.4,
+      "tags": ["code-review"],
+      "path": "assets/skills/code-reviewer"
+    }
+  ]
+}
+```
+
+---
+
+### 13.3 DB → ファイル エクスポートパイプライン
+
+#### エクスポートジョブ（`server/asset-exporter.ts`）
+
+```
+トリガー: 6時間毎の定期実行 + 手動（管理者パネルから）
+
+処理フロー:
+1. DB から全 community_assets を finalScore 降順でフェッチ
+2. assetType 別にディレクトリを整理
+3. 各アセットを {name}/content.* + meta.json に書き出し
+4. _index.json を更新
+5. assets/index.json を再生成
+6. git add assets/ && git commit --author="osm-bot" && git push
+```
+
+#### 差分コミットの戦略
+
+- **新規アセット**: `feat(assets): add {name} [{type}]`
+- **スコア更新のみ**: `chore(assets): update scores ({N} assets)`（バッチコミット）
+- **削除**: `chore(assets): remove {name} (blocked/duplicate)`
+
+スコアのみの変更は 1 日 1 回まとめてコミットし、Git 履歴を汚さない。
+
+---
+
+### 13.4 Public REST API（`/api/v1`）
+
+tRPC とは別に、**認証不要の REST API** を追加する。外部ツールが API キーなしで利用できることを最優先とする。
+
+#### エンドポイント一覧
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| `GET` | `/api/v1/assets` | 全タイプ横断一覧（クエリパラメータでフィルター） |
+| `GET` | `/api/v1/assets/:type` | タイプ別一覧（`skills` / `hooks` / `commands` 等） |
+| `GET` | `/api/v1/assets/:type/:id` | 単体取得（本文 + メタデータ） |
+| `GET` | `/api/v1/assets/search` | 全文検索（`?q=keyword&type=skill&limit=20`） |
+| `GET` | `/api/v1/assets/trending` | 直近 7 日の急上昇アセット |
+| `GET` | `/api/v1/assets/curated` | 管理者キュレーション済みアセット |
+| `GET` | `/api/v1/index.json` | `assets/index.json` をそのまま返す |
+| `GET` | `/api/v1/stats` | 収集統計（総数・タイプ別・更新日時） |
+
+#### クエリパラメータ共通仕様
+
+```
+?type=skill,hook             ← 複数タイプフィルター
+?q=code+review               ← 全文検索
+?tags=typescript,react       ← タグフィルター
+?category=development        ← カテゴリフィルター
+?sort=score|stars|installs|updated  ← ソート順
+?order=desc|asc
+?limit=20&cursor=xxx         ← カーソルページネーション
+?minScore=70                 ← 最低スコアフィルター
+?curated=true                ← キュレーション済みのみ
+```
+
+#### レスポンス例（`GET /api/v1/assets/skills`）
+
+```json
+{
+  "assets": [
+    {
+      "id": "code-reviewer-abc123",
+      "name": "code-reviewer",
+      "description": "...",
+      "finalScore": 87.4,
+      "installPath": "assets/skills/code-reviewer",
+      "rawUrl": "https://raw.githubusercontent.com/kazgamada/openspace-skill-manager/main/assets/skills/code-reviewer/SKILL.md",
+      "tags": ["code-review"],
+      "stars": 142,
+      "installCount": 891
+    }
+  ],
+  "meta": {
+    "total": 2847,
+    "cursor": "eyJpZCI6...",
+    "generatedAt": "2026-04-09T06:00:00Z"
+  }
+}
+```
+
+#### CORS・レート制限
+
+- CORS: `*`（完全公開）
+- レート制限: 60 req/分/IP（認証なしのため厳しめ）
+- キャッシュ: `Cache-Control: public, max-age=300`（5 分）
+
+---
+
+### 13.5 MCP サーバー化（OSM を Claude Code から直接クエリ）
+
+OSM 自体を MCP サーバーとして公開することで、Claude Code が **会話中にリアルタイムでスキルを検索・インストール** できるようになる。
+
+#### MCP サーバー定義（`server/mcp-server.ts`）
+
+```
+提供するツール:
+- osm_search(query, type?, limit?)    ← アセット検索
+- osm_get(id)                         ← アセット詳細取得
+- osm_install(id, targetPath?)        ← アセットをローカルに書き込み
+- osm_trending(type?, limit?)         ← トレンド取得
+- osm_curated(type?)                  ← キュレーション済みリスト
+```
+
+#### `~/.claude.json` への追加スニペット（OSM が自動生成）
+
+```json
+{
+  "mcpServers": {
+    "openspace-skill-manager": {
+      "type": "http",
+      "url": "https://your-osm-instance.railway.app/mcp",
+      "description": "Claude Code スキル・フック・コマンドの検索とインストール"
+    }
+  }
+}
+```
+
+#### 利用イメージ
+
+```
+ユーザー: 「コードレビュー用のスキルを探してインストールして」
+Claude:   osm_search("code review", type="skill") → 結果一覧
+Claude:   osm_install("code-reviewer-abc123", ".claude/skills/")
+Claude:   「インストール完了しました。~/.claude/skills/code-reviewer.md に保存しました」
+```
+
+---
+
+### 13.6 npm パッケージ（`@openspace/assets`）
+
+TypeScript / JavaScript ツールから programmatic にアセットを利用できる SDK。
+
+#### パッケージ構成
+
+```
+@openspace/assets
+├── src/
+│   ├── client.ts       ← API クライアント（fetch ベース）
+│   ├── types.ts        ← 全型定義（OsmAsset, OsmSkill 等）
+│   ├── install.ts      ← ローカルへのインストールヘルパー
+│   └── index.ts        ← エントリポイント
+```
+
+#### 使用例
+
+```typescript
+import { OsmClient } from "@openspace/assets";
+
+const osm = new OsmClient({
+  baseUrl: "https://your-osm-instance.railway.app/api/v1",
+  // apiKey は不要（公開 API）
+});
+
+// スキル検索
+const results = await osm.search("code review", { type: "skill", limit: 10 });
+
+// アセット取得
+const skill = await osm.get("code-reviewer-abc123");
+console.log(skill.content); // SKILL.md 本文
+
+// ローカルインストール
+await osm.install("code-reviewer-abc123", {
+  targetDir: ".claude/skills",
+  overwrite: false,
+});
+
+// トレンド一覧
+const trending = await osm.trending({ type: "hook", limit: 5 });
+```
+
+#### 型定義
+
+```typescript
+type AssetType = "skill" | "hook" | "command" | "agent" | "mcp" | "claude_md";
+
+interface OsmAsset {
+  id: string;
+  assetType: AssetType;
+  name: string;
+  description: string;
+  content: string;           // ファイル本文
+  meta: OsmAssetMeta;
+}
+
+interface OsmAssetMeta {
+  finalScore: number;
+  tags: string[];
+  stars: number;
+  installCount: number;
+  isCurated: boolean;
+  securityFlags: string[];   // 注意事項
+  rawUrl: string;            // GitHub raw URL
+}
+```
+
+#### npm 公開
+
+```
+パッケージ名: @openspace/assets
+バージョニング: OSM の assets/index.json の generatedAt に連動
+公開頻度: assets/ に変更がある場合のみ（GitHub Actions で自動 publish）
+```
+
+---
+
+### 13.7 CLI ツール（`osm` コマンド）
+
+ターミナルから 1 コマンドでインストールできるツール。`@openspace/assets` SDK をラップして実装。
+
+#### コマンド一覧
+
+```bash
+# 検索
+osm search "code review"
+osm search --type hook "format"
+osm search --curated --type agent
+
+# インストール
+osm install code-reviewer               # マイスキルへインストール
+osm install format-on-save --type hook  # フックとしてインストール
+osm install commit --type command       # コマンドとしてインストール
+
+# 一覧表示
+osm list skills --top 10               # スコア上位10件
+osm list trending --type hook          # トレンドのフック
+
+# 情報確認
+osm info code-reviewer                 # メタデータ・スコア内訳表示
+osm diff code-reviewer                 # インストール前の内容プレビュー
+
+# 同期
+osm sync                               # インストール済みアセットを最新版に更新
+osm export --format json > my-assets.json  # エクスポート
+```
+
+#### インストール方法
+
+```bash
+npm install -g @openspace/cli
+# または
+npx @openspace/cli search "code review"
+```
+
+#### インストール先の自動判定
+
+| アセットタイプ | デフォルトインストール先 |
+|-------------|----------------------|
+| skill | `.claude/skills/` または `~/.claude/skills/` |
+| hook | `.claude/settings.json` の hooks セクションに追記 |
+| command | `.claude/commands/` または `~/.claude/commands/` |
+| agent | `.claude/agents/` または `~/.claude/agents/` |
+| mcp | `.mcp.json` の mcpServers に追記 |
+| claude_md | `CLAUDE.md`（マージモードで追記） |
+
+---
+
+### 13.8 GitHub Actions 連携
+
+#### アクション 1: `osm-sync`（インストール済みアセットの自動更新）
+
+```yaml
+# .github/workflows/osm-sync.yml
+name: OSM Asset Sync
+on:
+  schedule:
+    - cron: "0 9 * * 1"  # 毎週月曜 9時
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: openspace/osm-sync-action@v1
+        with:
+          osm-url: ${{ vars.OSM_URL }}
+          target-dir: .claude/skills
+          auto-pr: true          # 差分を PR として提出
+```
+
+#### アクション 2: `osm-publish`（自作スキルを OSM にプッシュ）
+
+```yaml
+# .github/workflows/osm-publish.yml
+name: Publish Skills to OSM
+on:
+  push:
+    paths: ['.claude/skills/**']
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: openspace/osm-publish-action@v1
+        with:
+          osm-url: ${{ vars.OSM_URL }}
+          osm-token: ${{ secrets.OSM_API_TOKEN }}
+          skills-dir: .claude/skills
+```
+
+---
+
+### 13.9 Webhook によるリアルタイム通知
+
+外部ツールが新着アセットや更新を受け取れるよう、Webhook を実装する。
+
+#### Webhook イベント一覧
+
+| イベント | 説明 | ペイロード |
+|---------|------|-----------|
+| `asset.created` | 新規アセット収集 | assetId, type, name, score |
+| `asset.updated` | スコア・内容更新 | assetId, diff, newScore |
+| `asset.curated` | 管理者によるキュレーション | assetId, listName |
+| `assets.export` | 定期エクスポート完了 | stats, commitSha |
+| `trending.updated` | トレンドランキング更新 | top10 スナップショット |
+
+#### Webhook 設定 API
+
+```
+POST /api/v1/webhooks          ← 登録（要 API キー）
+DELETE /api/v1/webhooks/:id    ← 削除
+GET /api/v1/webhooks           ← 一覧
+
+ペイロード形式:
+{
+  "event": "asset.created",
+  "timestamp": "2026-04-09T06:00:00Z",
+  "data": { ... }
+}
+```
+
+---
+
+### 13.10 外部ツールからの利用パターン一覧
+
+| ユースケース | 推奨手段 | 概要 |
+|------------|---------|------|
+| Claude Code からリアルタイム検索 | MCP サーバー | 会話中に `osm_search` で検索・即インストール |
+| CI/CD でのスキル自動更新 | GitHub Actions | 毎週 PR でスキル更新を提案 |
+| VSCode 拡張からのスキル挿入 | REST API | `/api/v1/assets/search` で検索・補完 |
+| TypeScript ツールへの組み込み | npm SDK | `@openspace/assets` で programmatic アクセス |
+| シェルスクリプトでのインストール | REST API raw URL | `curl {rawUrl} > .claude/skills/name.md` |
+| 自社ツールへのアセット同期 | Webhook + REST API | 新着通知を受け取り自動取り込み |
+| ターミナルからのアドホック利用 | CLI (`osm`) | `osm install code-reviewer` |
+| オフライン利用 | git clone | `git clone` だけで全アセットを取得 |
+
+---
+
+### 13.11 セキュリティ考慮（配布時）
+
+配布・外部公開する際に特に注意が必要な点：
+
+| リスク | 対応 |
+|--------|------|
+| 悪意あるスキルの配布 | 収集時セキュリティチェック + 管理者承認フロー |
+| npm パッケージへの混入 | `npm publish` 前に assets の hash 検証 |
+| MCP ツール経由の任意コード実行 | `osm_install` はファイル書き込みのみ。シェル実行なし |
+| Webhook のなりすまし | HMAC-SHA256 署名による検証を必須化 |
+| raw URL での直接取得 | GitHub raw は公開前提。機密を含むアセットは収集しない |
+
+---
+
+### 13.12 DB テーブル追加（エクスポート管理）
+
+#### `asset_export_logs`
+
+| カラム | 型 | 説明 |
+|--------|----|----- |
+| `id` | SERIAL | 主キー |
+| `exportedAt` | TIMESTAMP | エクスポート実行日時 |
+| `commitSha` | VARCHAR(64) | Git コミット SHA |
+| `totalAssets` | INT | エクスポート総数 |
+| `added` | INT | 新規追加数 |
+| `updated` | INT | 更新数 |
+| `removed` | INT | 削除数 |
+| `durationMs` | INT | 処理時間 |
+| `status` | VARCHAR(16) | `success` / `error` |
+
+#### `webhook_subscriptions`
+
+| カラム | 型 | 説明 |
+|--------|----|----- |
+| `id` | SERIAL | 主キー |
+| `url` | TEXT | Webhook 送信先 URL |
+| `events` | TEXT | 購読イベント（JSON 配列） |
+| `secret` | TEXT | HMAC 署名キー（暗号化保存） |
+| `isActive` | BOOLEAN | 有効フラグ |
+| `lastDeliveredAt` | TIMESTAMP | 最終送信日時 |
+| `failCount` | INT | 連続失敗回数（5回で自動無効化） |
+
+---
+
+### 13.13 フェーズ別実装追加（セクション 10 の更新）
+
+| Phase | 追加タスク |
+|-------|-----------|
+| **Phase 2** | `assets/` ディレクトリ構造設計・エクスポートジョブ実装・`asset_export_logs` テーブル |
+| **Phase 3** | Public REST API `/api/v1` 実装・CORS + キャッシュ設定 |
+| **Phase 3** | MCP サーバー（`server/mcp-server.ts`）実装・`/mcp` エンドポイント追加 |
+| **Phase 4** | `@openspace/assets` npm SDK 公開・`osm` CLI ツール |
+| **Phase 4** | Webhook システム実装・`webhook_subscriptions` テーブル |
+| **Phase 5** | GitHub Actions（`osm-sync` / `osm-publish`）・自動 npm publish |
+
+---
+
+*本要件定義書は 2026-04-09 に更新されました（セクション 13 追記）。*
