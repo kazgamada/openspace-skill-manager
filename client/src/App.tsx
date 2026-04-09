@@ -13,6 +13,7 @@ import AdminSettings from "./pages/AdminSettings";
 import UserSettings from "./pages/UserSettings";
 import ClaudeIntegration from "./pages/ClaudeIntegration";
 import LocalLogin from "./pages/LocalLogin";
+import Library from "./pages/Library";
 
 function Router() {
   return (
@@ -26,6 +27,8 @@ function Router() {
       <Route path="/skills/:id" component={SkillDetail} />
       {/* スキル広場 */}
       <Route path="/community" component={Community} />
+      {/* アセットライブラリ */}
+      <Route path="/library" component={Library} />
       {/* 設定（v4: 3サブページ） */}
       <Route path="/settings" component={UserSettings} />
       <Route path="/settings/account" component={UserSettings} />

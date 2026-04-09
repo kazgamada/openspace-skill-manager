@@ -45,6 +45,27 @@ import {
   createGithubSyncLog,
   updateGithubSyncLog,
   getGithubSyncLogs,
+  getCommunityAssets,
+  getCommunityAssetById,
+  upsertCommunityAsset,
+  deleteCommunityAsset,
+  upsertAssetRating,
+  getAssetAverageRating,
+  addAssetFavorite,
+  removeAssetFavorite,
+  getFavoritesByUser,
+  getDailyHeroPicks,
+  rotateDailyHeroPicks,
+  getAssetSets,
+  getAssetSetById,
+  getAssetSetItems,
+  createAssetSet,
+  addItemToAssetSet,
+  getPlans,
+  upsertPlan,
+  getWebhooksByUser,
+  createWebhookSubscription,
+  deleteWebhookSubscription,
   getDb,
   type SkillWithScore,
 } from "./db";
@@ -2493,6 +2514,193 @@ const evolutionRouter = router({
 });
 
 // ─────────────────────────────────────────────
+// Library Router (Asset Library)
+// ─────────────────────────────────────────────
+const libraryRouter = router({
+  // List assets with optional filters
+  list: publicProcedure
+    .input(z.object({
+      search: z.string().optional(),
+      assetType: z.string().optional(),
+      limit: z.number().min(1).max(100).default(20),
+      offset: z.number().min(0).default(0),
+      sortBy: z.enum(["crawlRank", "stars", "qualityScore", "cachedAt"]).default("crawlRank"),
+    }))
+    .query(async ({ input }) => {
+      return getCommunityAssets(input);
+    }),
+
+  // Get single asset detail
+  get: publicProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ input }) => {
+      const asset = await getCommunityAssetById(input.id);
+      if (!asset) throw new TRPCError({ code: "NOT_FOUND" });
+      const avgRating = await getAssetAverageRating(input.id);
+      return { ...asset, avgRating };
+    }),
+
+  // Today's hero picks for carousel
+  featured: publicProcedure.query(async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const picks = await getDailyHeroPicks(today);
+    if (picks.length === 0) {
+      // Fall back to top-ranked assets when no hero picks configured
+      const top = await getCommunityAssets({ limit: 5, sortBy: "crawlRank" });
+      return top;
+    }
+    const db = await getDb();
+    if (!db) return [];
+    // Load full asset data for each pick
+    const assets = await Promise.all(picks.map((p) => getCommunityAssetById(p.assetId)));
+    return assets.filter(Boolean);
+  }),
+
+  // Rotate hero picks (admin only)
+  rotateFeatured: protectedProcedure
+    .use(({ ctx, next }) => {
+      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+      return next({ ctx });
+    })
+    .input(z.object({ heroDate: z.string(), assetIds: z.array(z.string()).min(1).max(10) }))
+    .mutation(async ({ input }) => {
+      await rotateDailyHeroPicks(input.heroDate, input.assetIds);
+      return { ok: true };
+    }),
+
+  // Rate an asset (1–5 stars)
+  rate: protectedProcedure
+    .input(z.object({ assetId: z.string(), rating: z.number().min(1).max(5) }))
+    .mutation(async ({ input, ctx }) => {
+      await upsertAssetRating({ assetId: input.assetId, userId: ctx.user.id, rating: input.rating });
+      const avg = await getAssetAverageRating(input.assetId);
+      return { avgRating: avg };
+    }),
+
+  // Favorite / unfavorite
+  favorite: protectedProcedure
+    .input(z.object({ assetId: z.string(), favorite: z.boolean() }))
+    .mutation(async ({ input, ctx }) => {
+      if (input.favorite) {
+        await addAssetFavorite(input.assetId, ctx.user.id);
+      } else {
+        await removeAssetFavorite(input.assetId, ctx.user.id);
+      }
+      return { ok: true };
+    }),
+
+  // List user's favorites
+  myFavorites: protectedProcedure.query(async ({ ctx }) => {
+    const favs = await getFavoritesByUser(ctx.user.id);
+    const assets = await Promise.all(favs.map((f) => getCommunityAssetById(f.assetId)));
+    return assets.filter(Boolean);
+  }),
+
+  // List curated sets
+  sets: publicProcedure.query(async () => {
+    return getAssetSets(true);
+  }),
+
+  // Get set with items
+  getSet: publicProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ input }) => {
+      const set = await getAssetSetById(input.id);
+      if (!set) throw new TRPCError({ code: "NOT_FOUND" });
+      const items = await getAssetSetItems(input.id);
+      return { ...set, items };
+    }),
+
+  // Admin: create a curated set
+  createSet: protectedProcedure
+    .use(({ ctx, next }) => {
+      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+      return next({ ctx });
+    })
+    .input(z.object({
+      id: z.string(),
+      name: z.string().min(1).max(255),
+      description: z.string().optional(),
+      isPublic: z.boolean().default(true),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      await createAssetSet({ ...input, createdBy: ctx.user.id });
+      return { ok: true };
+    }),
+
+  // Admin: upsert a community asset
+  upsertAsset: protectedProcedure
+    .use(({ ctx, next }) => {
+      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+      return next({ ctx });
+    })
+    .input(z.object({
+      id: z.string(),
+      assetType: z.enum(["skill", "hook", "command", "agent", "mcp", "claude_md", "other"]),
+      name: z.string().min(1).max(255),
+      description: z.string().optional(),
+      benefitHeadline: z.string().optional(),
+      author: z.string().optional(),
+      repoOwner: z.string().optional(),
+      repoName: z.string().optional(),
+      filePath: z.string().optional(),
+      githubUrl: z.string().optional(),
+      rawContent: z.string().optional(),
+      tags: z.array(z.string()).optional(),
+      stars: z.number().optional(),
+      forks: z.number().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { tags, ...rest } = input;
+      await upsertCommunityAsset({
+        ...rest,
+        tags: tags ? JSON.stringify(tags) : null,
+      });
+      return { ok: true };
+    }),
+
+  // Admin: delete an asset
+  deleteAsset: protectedProcedure
+    .use(({ ctx, next }) => {
+      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+      return next({ ctx });
+    })
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ input }) => {
+      await deleteCommunityAsset(input.id);
+      return { ok: true };
+    }),
+
+  // Webhook subscriptions
+  listWebhooks: protectedProcedure.query(async ({ ctx }) => {
+    return getWebhooksByUser(ctx.user.id);
+  }),
+
+  addWebhook: protectedProcedure
+    .input(z.object({
+      url: z.string().url(),
+      events: z.array(z.string()).min(1),
+      secret: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const id = await createWebhookSubscription({
+        userId: ctx.user.id,
+        url: input.url,
+        events: JSON.stringify(input.events),
+        secret: input.secret,
+      });
+      return { id };
+    }),
+
+  removeWebhook: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      await deleteWebhookSubscription(input.id, ctx.user.id);
+      return { ok: true };
+    }),
+});
+
+// ─────────────────────────────────────────────
 // App Router
 // ─────────────────────────────────────────────
 export const appRouter = router({
@@ -2515,6 +2723,7 @@ export const appRouter = router({
   settings: settingsRouter,
   monitor: monitorRouter,
   evolution: evolutionRouter,
+  library: libraryRouter,
 });
 
 export type AppRouter = typeof appRouter;
