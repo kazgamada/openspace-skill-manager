@@ -17,7 +17,32 @@ import {
   UserIntegration,
   InsertUserIntegration,
   GithubSyncLog,
+  CommunityAsset,
+  InsertCommunityAsset,
+  AssetRating,
+  InsertAssetRating,
+  AssetFavorite,
+  AssetSet,
+  InsertAssetSet,
+  AssetSetItem,
+  DailyHeroPick,
+  InsertDailyHeroPick,
+  WebhookSubscription,
+  InsertWebhookSubscription,
+  Plan,
+  InsertPlan,
+  UserSubscription,
+  InsertUserSubscription,
   communitySkills,
+  communityAssets,
+  assetRatings,
+  assetFavorites,
+  dailyHeroPicks,
+  assetSets,
+  assetSetItems,
+  webhookSubscriptions,
+  plans,
+  userSubscriptions,
   executionLogs,
   githubSyncLogs,
   healthThresholds,
@@ -712,4 +737,278 @@ export async function getGithubSyncLogs(userId: number, limit = 10): Promise<Git
     .where(eq(githubSyncLogs.userId, userId))
     .orderBy(githubSyncLogs.startedAt)
     .limit(limit);
+}
+
+// ─────────────────────────────────────────────
+// Community Assets (Library)
+// ─────────────────────────────────────────────
+
+export async function getCommunityAssets(opts?: {
+  search?: string;
+  assetType?: string;
+  limit?: number;
+  offset?: number;
+  sortBy?: "crawlRank" | "stars" | "qualityScore" | "cachedAt";
+}): Promise<CommunityAsset[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [];
+  if (opts?.search) {
+    conditions.push(or(
+      like(communityAssets.name, `%${opts.search}%`),
+      like(communityAssets.description, `%${opts.search}%`),
+    ));
+  }
+  if (opts?.assetType && opts.assetType !== "all") {
+    conditions.push(eq(communityAssets.assetType, opts.assetType as CommunityAsset["assetType"]));
+  }
+  return db.select().from(communityAssets)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(
+      opts?.sortBy === "stars" ? desc(communityAssets.stars)
+      : opts?.sortBy === "qualityScore" ? desc(communityAssets.qualityScore)
+      : opts?.sortBy === "cachedAt" ? desc(communityAssets.cachedAt)
+      : desc(communityAssets.crawlRank)
+    )
+    .limit(opts?.limit ?? 20)
+    .offset(opts?.offset ?? 0);
+}
+
+export async function getCommunityAssetById(id: string): Promise<CommunityAsset | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const r = await db.select().from(communityAssets).where(eq(communityAssets.id, id)).limit(1);
+  return r[0];
+}
+
+export async function upsertCommunityAsset(data: InsertCommunityAsset): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.insert(communityAssets).values(data).onConflictDoUpdate({
+    target: communityAssets.id,
+    set: {
+      name: data.name,
+      description: data.description,
+      benefitHeadline: data.benefitHeadline,
+      stars: data.stars,
+      forks: data.forks,
+      crawlRank: data.crawlRank,
+      qualityScore: data.qualityScore,
+      rawContent: data.rawContent,
+      upstreamSha: data.upstreamSha,
+      updatedAt: new Date(),
+    },
+  });
+}
+
+export async function deleteCommunityAsset(id: string): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(communityAssets).where(eq(communityAssets.id, id));
+}
+
+// ─────────────────────────────────────────────
+// Asset Ratings
+// ─────────────────────────────────────────────
+
+export async function getAssetRatings(assetId: string): Promise<AssetRating[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(assetRatings).where(eq(assetRatings.assetId, assetId));
+}
+
+export async function upsertAssetRating(data: InsertAssetRating): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  // Replace existing rating by same user for same asset
+  await db.delete(assetRatings).where(
+    and(eq(assetRatings.assetId, data.assetId), eq(assetRatings.userId, data.userId!))
+  );
+  await db.insert(assetRatings).values(data);
+}
+
+export async function getAssetAverageRating(assetId: string): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const result = await db
+    .select({ avg: sql<number>`AVG(${assetRatings.rating})` })
+    .from(assetRatings)
+    .where(eq(assetRatings.assetId, assetId));
+  return result[0]?.avg ?? 0;
+}
+
+// ─────────────────────────────────────────────
+// Asset Favorites
+// ─────────────────────────────────────────────
+
+export async function getFavoritesByUser(userId: number): Promise<AssetFavorite[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(assetFavorites).where(eq(assetFavorites.userId, userId));
+}
+
+export async function addAssetFavorite(assetId: string, userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.insert(assetFavorites).values({ assetId, userId }).onConflictDoNothing();
+}
+
+export async function removeAssetFavorite(assetId: string, userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(assetFavorites).where(
+    and(eq(assetFavorites.assetId, assetId), eq(assetFavorites.userId, userId))
+  );
+}
+
+// ─────────────────────────────────────────────
+// Daily Hero Picks
+// ─────────────────────────────────────────────
+
+export async function getDailyHeroPicks(heroDate: string): Promise<DailyHeroPick[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(dailyHeroPicks)
+    .where(eq(dailyHeroPicks.heroDate, heroDate))
+    .orderBy(dailyHeroPicks.position);
+}
+
+export async function upsertDailyHeroPick(data: InsertDailyHeroPick): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.insert(dailyHeroPicks).values(data).onConflictDoNothing();
+}
+
+export async function rotateDailyHeroPicks(heroDate: string, assetIds: string[]): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  // Clear old picks for this date
+  await db.delete(dailyHeroPicks).where(eq(dailyHeroPicks.heroDate, heroDate));
+  // Insert new picks
+  const picks: InsertDailyHeroPick[] = assetIds.map((assetId, idx) => ({
+    assetId,
+    heroDate,
+    position: idx,
+  }));
+  if (picks.length > 0) await db.insert(dailyHeroPicks).values(picks);
+}
+
+// ─────────────────────────────────────────────
+// Asset Sets
+// ─────────────────────────────────────────────
+
+export async function getAssetSets(publicOnly = true): Promise<AssetSet[]> {
+  const db = await getDb();
+  if (!db) return [];
+  if (publicOnly) {
+    return db.select().from(assetSets).where(eq(assetSets.isPublic, true)).orderBy(desc(assetSets.createdAt));
+  }
+  return db.select().from(assetSets).orderBy(desc(assetSets.createdAt));
+}
+
+export async function getAssetSetById(id: string): Promise<AssetSet | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const r = await db.select().from(assetSets).where(eq(assetSets.id, id)).limit(1);
+  return r[0];
+}
+
+export async function getAssetSetItems(setId: string): Promise<(AssetSetItem & { asset: CommunityAsset })[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({ item: assetSetItems, asset: communityAssets })
+    .from(assetSetItems)
+    .innerJoin(communityAssets, eq(assetSetItems.assetId, communityAssets.id))
+    .where(eq(assetSetItems.setId, setId))
+    .orderBy(assetSetItems.position);
+  return rows.map((r) => ({ ...r.item, asset: r.asset }));
+}
+
+export async function createAssetSet(data: InsertAssetSet): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.insert(assetSets).values(data);
+}
+
+export async function addItemToAssetSet(setId: string, assetId: string, position: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.insert(assetSetItems).values({ setId, assetId, position }).onConflictDoNothing();
+}
+
+// ─────────────────────────────────────────────
+// Plans
+// ─────────────────────────────────────────────
+
+export async function getPlans(): Promise<Plan[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(plans).where(eq(plans.isActive, true)).orderBy(plans.priceMonthlyUsd);
+}
+
+export async function upsertPlan(data: InsertPlan): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.insert(plans).values(data).onConflictDoUpdate({
+    target: plans.slug,
+    set: { name: data.name, priceMonthlyUsd: data.priceMonthlyUsd, features: data.features },
+  });
+}
+
+// ─────────────────────────────────────────────
+// User Subscriptions
+// ─────────────────────────────────────────────
+
+export async function getUserSubscription(userId: number): Promise<UserSubscription | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const r = await db.select().from(userSubscriptions)
+    .where(and(eq(userSubscriptions.userId, userId), eq(userSubscriptions.status, "active")))
+    .orderBy(desc(userSubscriptions.createdAt))
+    .limit(1);
+  return r[0];
+}
+
+export async function upsertUserSubscription(data: InsertUserSubscription): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.insert(userSubscriptions).values(data).onConflictDoNothing();
+}
+
+// ─────────────────────────────────────────────
+// Webhook Subscriptions
+// ─────────────────────────────────────────────
+
+export async function getWebhooksByUser(userId: number): Promise<WebhookSubscription[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(webhookSubscriptions).where(eq(webhookSubscriptions.userId, userId));
+}
+
+export async function createWebhookSubscription(data: InsertWebhookSubscription): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const r = await db.insert(webhookSubscriptions).values(data).returning({ id: webhookSubscriptions.id });
+  return r[0].id;
+}
+
+export async function deleteWebhookSubscription(id: number, userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(webhookSubscriptions).where(
+    and(eq(webhookSubscriptions.id, id), eq(webhookSubscriptions.userId, userId))
+  );
+}
+
+export async function getActiveWebhooks(event: string): Promise<WebhookSubscription[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const all = await db.select().from(webhookSubscriptions).where(eq(webhookSubscriptions.isActive, true));
+  return all.filter((w) => {
+    try {
+      const events = JSON.parse(w.events) as string[];
+      return events.includes(event) || events.includes("*");
+    } catch { return false; }
+  });
 }

@@ -314,3 +314,163 @@ export const skillEvolutionProposals = pgTable("skill_evolution_proposals", {
 });
 export type SkillEvolutionProposal = typeof skillEvolutionProposals.$inferSelect;
 export type InsertSkillEvolutionProposal = typeof skillEvolutionProposals.$inferInsert;
+
+// ─────────────────────────────────────────────
+// Asset Library — community_assets
+// Stores non-skill Claude assets: hooks, commands, agents, MCP, CLAUDE.md, etc.
+// ─────────────────────────────────────────────
+export const assetTypeEnum = pgEnum("asset_type", [
+  "skill", "hook", "command", "agent", "mcp", "claude_md", "other",
+]);
+
+export const communityAssets = pgTable("community_assets", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  assetType: assetTypeEnum("assetType").notNull().default("other"),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  benefitHeadline: text("benefitHeadline"),   // LLM-generated 1-line benefit
+  author: varchar("author", { length: 128 }),
+  repoOwner: varchar("repoOwner", { length: 128 }),
+  repoName: varchar("repoName", { length: 128 }),
+  filePath: varchar("filePath", { length: 512 }),
+  githubUrl: varchar("githubUrl", { length: 512 }),
+  rawContent: text("rawContent"),
+  tags: text("tags"),                          // JSON array string
+  stars: integer("stars").default(0),
+  forks: integer("forks").default(0),
+  crawlRank: real("crawlRank").default(0),
+  qualityScore: real("qualityScore").default(0),
+  isInstalled: boolean("isInstalled").default(false),
+  upstreamSha: varchar("upstreamSha", { length: 64 }),
+  cachedAt: timestamp("cachedAt", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type CommunityAsset = typeof communityAssets.$inferSelect;
+export type InsertCommunityAsset = typeof communityAssets.$inferInsert;
+
+// ─────────────────────────────────────────────
+// Asset Ratings
+// ─────────────────────────────────────────────
+export const assetRatings = pgTable("asset_ratings", {
+  id: serial("id").primaryKey(),
+  assetId: varchar("assetId", { length: 64 }).notNull().references(() => communityAssets.id, { onDelete: "cascade" }),
+  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  rating: integer("rating").notNull(),          // 1–5
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type AssetRating = typeof assetRatings.$inferSelect;
+export type InsertAssetRating = typeof assetRatings.$inferInsert;
+
+// ─────────────────────────────────────────────
+// Asset Favorites
+// ─────────────────────────────────────────────
+export const assetFavorites = pgTable("asset_favorites", {
+  id: serial("id").primaryKey(),
+  assetId: varchar("assetId", { length: 64 }).notNull().references(() => communityAssets.id, { onDelete: "cascade" }),
+  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type AssetFavorite = typeof assetFavorites.$inferSelect;
+export type InsertAssetFavorite = typeof assetFavorites.$inferInsert;
+
+// ─────────────────────────────────────────────
+// Daily Hero Picks (rotating featured carousel)
+// ─────────────────────────────────────────────
+export const dailyHeroPicks = pgTable("daily_hero_picks", {
+  id: serial("id").primaryKey(),
+  assetId: varchar("assetId", { length: 64 }).notNull().references(() => communityAssets.id, { onDelete: "cascade" }),
+  heroDate: varchar("heroDate", { length: 10 }).notNull(),   // YYYY-MM-DD
+  position: integer("position").notNull().default(0),         // 0 = primary hero
+  heroImageUrl: varchar("heroImageUrl", { length: 512 }),
+  heroTagline: text("heroTagline"),
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type DailyHeroPick = typeof dailyHeroPicks.$inferSelect;
+export type InsertDailyHeroPick = typeof dailyHeroPicks.$inferInsert;
+
+// ─────────────────────────────────────────────
+// Asset Sets (curated bundles / playlists)
+// ─────────────────────────────────────────────
+export const assetSets = pgTable("asset_sets", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  coverImageUrl: varchar("coverImageUrl", { length: 512 }),
+  createdBy: integer("createdBy").references(() => users.id, { onDelete: "set null" }),
+  isPublic: boolean("isPublic").default(true).notNull(),
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type AssetSet = typeof assetSets.$inferSelect;
+export type InsertAssetSet = typeof assetSets.$inferInsert;
+
+export const assetSetItems = pgTable("asset_set_items", {
+  id: serial("id").primaryKey(),
+  setId: varchar("setId", { length: 64 }).notNull().references(() => assetSets.id, { onDelete: "cascade" }),
+  assetId: varchar("assetId", { length: 64 }).notNull().references(() => communityAssets.id, { onDelete: "cascade" }),
+  position: integer("position").notNull().default(0),
+  addedAt: timestamp("addedAt", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type AssetSetItem = typeof assetSetItems.$inferSelect;
+export type InsertAssetSetItem = typeof assetSetItems.$inferInsert;
+
+// ─────────────────────────────────────────────
+// Plans (subscription tiers)
+// ─────────────────────────────────────────────
+export const plans = pgTable("plans", {
+  id: serial("id").primaryKey(),
+  slug: varchar("slug", { length: 32 }).notNull().unique(),   // "free" | "pro" | "enterprise"
+  name: varchar("name", { length: 64 }).notNull(),
+  priceMonthlyUsd: integer("priceMonthlyUsd").notNull().default(0),   // cents
+  priceYearlyUsd: integer("priceYearlyUsd").notNull().default(0),
+  stripePriceIdMonthly: varchar("stripePriceIdMonthly", { length: 64 }),
+  stripePriceIdYearly: varchar("stripePriceIdYearly", { length: 64 }),
+  features: text("features"),    // JSON array of feature strings
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type Plan = typeof plans.$inferSelect;
+export type InsertPlan = typeof plans.$inferInsert;
+
+export const userSubscriptions = pgTable("user_subscriptions", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  planId: integer("planId").notNull().references(() => plans.id),
+  stripeSubscriptionId: varchar("stripeSubscriptionId", { length: 128 }),
+  stripeCustomerId: varchar("stripeCustomerId", { length: 128 }),
+  status: varchar("status", { length: 32 }).notNull().default("active"),   // active | canceled | past_due
+  currentPeriodStart: timestamp("currentPeriodStart", { withTimezone: true }),
+  currentPeriodEnd: timestamp("currentPeriodEnd", { withTimezone: true }),
+  canceledAt: timestamp("canceledAt", { withTimezone: true }),
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type UserSubscription = typeof userSubscriptions.$inferSelect;
+export type InsertUserSubscription = typeof userSubscriptions.$inferInsert;
+
+// ─────────────────────────────────────────────
+// Webhook Subscriptions
+// ─────────────────────────────────────────────
+export const webhookSubscriptions = pgTable("webhook_subscriptions", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  url: varchar("url", { length: 512 }).notNull(),
+  secret: varchar("secret", { length: 128 }),
+  events: text("events").notNull(),    // JSON array: ["asset.new", "asset.updated"]
+  isActive: boolean("isActive").default(true).notNull(),
+  lastDeliveredAt: timestamp("lastDeliveredAt", { withTimezone: true }),
+  failureCount: integer("failureCount").default(0).notNull(),
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type WebhookSubscription = typeof webhookSubscriptions.$inferSelect;
+export type InsertWebhookSubscription = typeof webhookSubscriptions.$inferInsert;
