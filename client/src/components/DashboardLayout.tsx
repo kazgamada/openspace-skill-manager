@@ -289,9 +289,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     try { localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString()); } catch {}
   }, [sidebarWidth]);
 
-  if (loading) return <DashboardLayoutSkeleton />;
-
-  // 未ログインでもダッシュボードを表示する（認証不要モード）
+  // ロード中・未ログインどちらでもダッシュボードを表示する（認証不要モード）
+  // loading中はユーザーなしとして即レンダリング
   return (
     <SidebarProvider
       style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
@@ -413,8 +412,8 @@ function DashboardLayoutContent({
   children: React.ReactNode;
   setSidebarWidth: (w: number) => void;
 }) {
-  const { user: authUser, logout } = useAuth();
-  // 未ログイン時はゲストユーザーとして扱う
+  const { user: authUser, loading, logout } = useAuth();
+  // ロード中・未ログイン時はゲストユーザーとして扱う（ダッシュボードは即表示）
   const user = authUser ?? { name: "ゲスト", email: "", role: "guest" as const, id: 0, openId: "" };
   const [location, setLocation] = useLocation();
   const { state, toggleSidebar } = useSidebar();
@@ -651,7 +650,7 @@ function DashboardLayoutContent({
 
           {/* Footer */}
           <SidebarFooter className="p-2 border-t border-sidebar-border">
-            {!authUser ? (
+            {!authUser && !loading ? (
               /* 未ログイン時はログインボタン */
               <button
                 onClick={() => { window.location.href = "/login"; }}
