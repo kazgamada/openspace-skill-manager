@@ -96,9 +96,9 @@ const SOURCE_PRESETS = [
   { name: "get-shit-done",             repoOwner: "gsd-build",          repoName: "get-shit-done",             skillsPath: "",       branch: "main", desc: "タスク実行特化GSDスキル" },
   { name: "claude-code-ultimate-guide",repoOwner: "FlorianBruniaux",    repoName: "claude-code-ultimate-guide",skillsPath: "",       branch: "main", desc: "2.3万行ドキュメント・219テンプレート" },
   { name: "antigravity-awesome-skills",repoOwner: "sickn33",            repoName: "antigravity-awesome-skills",skillsPath: "",       branch: "main", desc: "1,200以上の即使えるスキル集" },
-  { name: "Claude-Agent-Blueprints",   repoOwner: "danielrosehill",     repoName: "Claude-Agent-Blueprints",   skillsPath: "",       branch: "main", desc: "75以上のエージェントテンプレート" },
-  { name: "voicemode",                 repoOwner: "mbailey",            repoName: "voicemode",                 skillsPath: "",       branch: "main", desc: "音声会話 MCP サーバー" },
-  { name: "awesome-claude-plugins",    repoOwner: "ComposioHQ",         repoName: "awesome-claude-plugins",    skillsPath: "",       branch: "main", desc: "9,000以上のプラグインインデックス" },
+  { name: "Claude-Code-Repos-Index",   repoOwner: "danielrosehill",     repoName: "Claude-Code-Repos-Index",   skillsPath: "",       branch: "main", desc: "75以上のエージェントテンプレート" },
+  { name: "voicemode-mcp",             repoOwner: "mikecbaley",         repoName: "voicemode-mcp",             skillsPath: "",       branch: "main", desc: "音声会話 MCP サーバー" },
+  { name: "awesome-claude-plugins",    repoOwner: "quemsah",            repoName: "awesome-claude-plugins",    skillsPath: "",       branch: "main", desc: "9,000以上のプラグインインデックス" },
 ] as const;
 
 // ─── おすすめリソース一覧（UI表示用） ──────────────────────────────────────────
@@ -192,17 +192,17 @@ const RECOMMENDED_RESOURCES: RecommendedResource[] = [
   },
   {
     id: "claude-agent-blueprints",
-    name: "Claude-Agent-Blueprints",
+    name: "Claude-Code-Repos-Index",
     label: "Claude Agent Blueprints",
-    repoOwner: "danielrosehill", repoName: "Claude-Agent-Blueprints",
+    repoOwner: "danielrosehill", repoName: "Claude-Code-Repos-Index",
     skillsPath: "", branch: "main", type: "agent",
     benefit: "コーディング以外にも使える75以上のエージェントワークスペーステンプレート",
   },
   {
     id: "voicemode",
-    name: "voicemode",
+    name: "voicemode-mcp",
     label: "VoiceMode MCP",
-    repoOwner: "mbailey", repoName: "voicemode",
+    repoOwner: "mikecbaley", repoName: "voicemode-mcp",
     skillsPath: "", branch: "main", type: "voice",
     benefit: "Whisper＋KokoroでClaude Codeと自然言語で音声会話。ハンズフリー開発を実現",
   },
@@ -210,7 +210,7 @@ const RECOMMENDED_RESOURCES: RecommendedResource[] = [
     id: "awesome-claude-plugins",
     name: "awesome-claude-plugins",
     label: "Awesome Claude Plugins",
-    repoOwner: "ComposioHQ", repoName: "awesome-claude-plugins",
+    repoOwner: "quemsah", repoName: "awesome-claude-plugins",
     skillsPath: "", branch: "main", type: "collection",
     benefit: "9,000以上のリポジトリをインデックス化＆採用指標付き。実際に使われているプラグインを把握",
   },
