@@ -96,9 +96,9 @@ const SOURCE_PRESETS = [
   { name: "get-shit-done",             repoOwner: "gsd-build",          repoName: "get-shit-done",             skillsPath: "",       branch: "main", desc: "タスク実行特化GSDスキル" },
   { name: "claude-code-ultimate-guide",repoOwner: "FlorianBruniaux",    repoName: "claude-code-ultimate-guide",skillsPath: "",       branch: "main", desc: "2.3万行ドキュメント・219テンプレート" },
   { name: "antigravity-awesome-skills",repoOwner: "sickn33",            repoName: "antigravity-awesome-skills",skillsPath: "",       branch: "main", desc: "1,200以上の即使えるスキル集" },
-  { name: "Claude-Agent-Blueprints",   repoOwner: "danielrosehill",     repoName: "Claude-Agent-Blueprints",   skillsPath: "",       branch: "main", desc: "75以上のエージェントテンプレート" },
-  { name: "voicemode",                 repoOwner: "mbailey",            repoName: "voicemode",                 skillsPath: "",       branch: "main", desc: "音声会話 MCP サーバー" },
-  { name: "awesome-claude-plugins",    repoOwner: "ComposioHQ",         repoName: "awesome-claude-plugins",    skillsPath: "",       branch: "main", desc: "9,000以上のプラグインインデックス" },
+  { name: "Claude-Code-Repos-Index",   repoOwner: "danielrosehill",     repoName: "Claude-Code-Repos-Index",   skillsPath: "",       branch: "main", desc: "75以上のエージェントテンプレート" },
+  { name: "voicemode-mcp",             repoOwner: "mikecbaley",         repoName: "voicemode-mcp",             skillsPath: "",       branch: "main", desc: "音声会話 MCP サーバー" },
+  { name: "awesome-claude-plugins",    repoOwner: "quemsah",            repoName: "awesome-claude-plugins",    skillsPath: "",       branch: "main", desc: "9,000以上のプラグインインデックス" },
 ] as const;
 
 // ─── おすすめリソース一覧（UI表示用） ──────────────────────────────────────────
@@ -192,17 +192,17 @@ const RECOMMENDED_RESOURCES: RecommendedResource[] = [
   },
   {
     id: "claude-agent-blueprints",
-    name: "Claude-Agent-Blueprints",
+    name: "Claude-Code-Repos-Index",
     label: "Claude Agent Blueprints",
-    repoOwner: "danielrosehill", repoName: "Claude-Agent-Blueprints",
+    repoOwner: "danielrosehill", repoName: "Claude-Code-Repos-Index",
     skillsPath: "", branch: "main", type: "agent",
     benefit: "コーディング以外にも使える75以上のエージェントワークスペーステンプレート",
   },
   {
     id: "voicemode",
-    name: "voicemode",
+    name: "voicemode-mcp",
     label: "VoiceMode MCP",
-    repoOwner: "mbailey", repoName: "voicemode",
+    repoOwner: "mikecbaley", repoName: "voicemode-mcp",
     skillsPath: "", branch: "main", type: "voice",
     benefit: "Whisper＋KokoroでClaude Codeと自然言語で音声会話。ハンズフリー開発を実現",
   },
@@ -210,7 +210,7 @@ const RECOMMENDED_RESOURCES: RecommendedResource[] = [
     id: "awesome-claude-plugins",
     name: "awesome-claude-plugins",
     label: "Awesome Claude Plugins",
-    repoOwner: "ComposioHQ", repoName: "awesome-claude-plugins",
+    repoOwner: "quemsah", repoName: "awesome-claude-plugins",
     skillsPath: "", branch: "main", type: "collection",
     benefit: "9,000以上のリポジトリをインデックス化＆採用指標付き。実際に使われているプラグインを把握",
   },
@@ -593,33 +593,6 @@ function SourcesPanel() {
         </div>
       )}
 
-      <Card className="bg-muted/20 border-border/50">
-        <CardContent className="p-4">
-          <h3 className="text-xs font-semibold mb-2 flex items-center gap-1.5">
-            <Settings2 className="w-3.5 h-3.5 text-primary" />
-            動的同期の仕組み
-          </h3>
-          <div className="space-y-1.5 text-[10px] text-muted-foreground">
-            <div className="flex items-start gap-2">
-              <ChevronRight className="w-3 h-3 text-primary shrink-0 mt-0.5" />
-              <span>Git Tree API で1リクエストにより全ファイルの <span className="font-mono text-foreground/70">blob SHA</span> を一括取得</span>
-            </div>
-            <div className="flex items-start gap-2">
-              <ChevronRight className="w-3 h-3 text-primary shrink-0 mt-0.5" />
-              <span>SHA が変わったスキルのみ内容を再取得（最大10並列）し、DB を upsert</span>
-            </div>
-            <div className="flex items-start gap-2">
-              <ChevronRight className="w-3 h-3 text-primary shrink-0 mt-0.5" />
-              <span>サーバー起動 30 秒後に初回同期を実行し、以降は設定した間隔（デフォルト 6 時間）で自動同期</span>
-            </div>
-            <div className="flex items-start gap-2">
-              <ChevronRight className="w-3 h-3 text-primary shrink-0 mt-0.5" />
-              <span>タイトル＋更新日時が同一のスキルは重複とみなし、「重複を削除」ボタンで一括削除可能</span>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
       <AddSourceDialog open={addOpen} onClose={() => setAddOpen(false)} />
     </div>
   );
@@ -913,10 +886,10 @@ function SkillsGrid({ children, viewMode }: { children: React.ReactNode; viewMod
     return <div className="flex flex-col gap-2">{children}</div>;
   }
   if (viewMode === "tile-sm") {
-    return <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">{children}</div>;
+    return <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 gap-2">{children}</div>;
   }
   // tile-lg
-  return <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{children}</div>;
+  return <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">{children}</div>;
 }
 
 // ─── メインコンポーネント ────────────────────────────────────────────────────
@@ -926,7 +899,7 @@ export default function Community() {
   const [category, setCategory] = useState("all");
   const [searchInput, setSearchInput] = useState("");
   const [sortBy, setSortBy] = useState<"crawlRank" | "stars" | "downloads" | "qualityScore" | "cachedAt">("crawlRank");
-  const [viewMode, setViewMode] = useViewMode("community-view-mode", "tile-lg");
+  const [viewMode, setViewMode] = useViewMode("community-view-mode", "tile-sm");
   const utils = trpc.useUtils();
   const [, setLocation] = useLocation();
   const { data: integrations } = trpc.settings.getIntegrations.useQuery();
@@ -963,7 +936,7 @@ export default function Community() {
     <DashboardLayout>
       <div className="flex h-full">
         {/* ─── 左パネル: ソース管理 ─── */}
-        <div className="w-72 xl:w-80 shrink-0 flex flex-col border-r border-border bg-card/30">
+        <div className="w-52 xl:w-60 shrink-0 flex flex-col border-r border-border bg-card/30">
           <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
             <div className="flex items-center gap-2">
               <Database className="w-4 h-4 text-primary" />
@@ -999,15 +972,10 @@ export default function Community() {
         {/* ─── 右パネル: スキル一覧 ─── */}
         <div className="flex flex-col flex-1 min-w-0">
           {/* Header */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
-            <div>
-              <h1 className="text-lg font-bold flex items-center gap-2">
-                <Globe className="w-5 h-5 text-primary" />
-                スキル広場
-              </h1>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                GitHub全体を回遊して公開スキルを自動収集（1日100件）・パフォーマンス順に表示
-              </p>
+          <div className="flex items-center justify-between px-4 py-2 border-b border-border shrink-0">
+            <div className="flex items-center gap-2">
+              <Globe className="w-4 h-4 text-primary" />
+              <h1 className="text-sm font-bold">スキル広場</h1>
             </div>
             <div className="flex items-center gap-2">
               {crawlStats.data && (
@@ -1028,8 +996,8 @@ export default function Community() {
             </div>
           </div>
           {/* Skill list area */}
-          <div className="flex-1 overflow-y-auto p-5">
-            <div className="space-y-4">
+          <div className="flex-1 overflow-y-auto p-3">
+            <div className="space-y-2">
               {/* Search & Filter & ViewToggle */}
               <div className="flex items-center gap-3">
                 <div className="relative flex-1">

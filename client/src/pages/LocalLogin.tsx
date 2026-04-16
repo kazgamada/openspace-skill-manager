@@ -30,8 +30,8 @@ export default function LocalLogin() {
         return;
       }
       setLocation("/");
-    } catch {
-      setError("サーバーに接続できませんでした");
+    } catch (e) {
+      setError("サーバーに接続できませんでした — API が起動していないか、環境変数が未設定の可能性があります");
     } finally {
       setLoading(false);
     }

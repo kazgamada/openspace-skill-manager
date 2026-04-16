@@ -46,6 +46,18 @@ export function registerLocalAuthRoutes(app: Express) {
       });
     }
 
+    if (!ENV.cookieSecret) {
+      return res.status(503).json({
+        error: "JWT_SECRET が設定されていません。環境変数に JWT_SECRET を追加してください。",
+      });
+    }
+
+    if (!process.env.DATABASE_URL) {
+      return res.status(503).json({
+        error: "DATABASE_URL が設定されていません。Supabase の接続文字列を設定してください。",
+      });
+    }
+
     const normalizedEmail = email.trim().toLowerCase();
     const isOwnerEmail = OWNER_EMAILS.includes(normalizedEmail);
     const isAdminEmail =

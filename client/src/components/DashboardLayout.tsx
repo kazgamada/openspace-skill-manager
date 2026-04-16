@@ -1,5 +1,4 @@
 import { useAuth } from "@/_core/hooks/useAuth";
-import { isLocalAuthMode } from "@/const";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -21,7 +20,7 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { getLoginUrl } from "@/const";
+
 import { useIsMobile } from "@/hooks/useMobile";
 import {
   Activity,
@@ -53,7 +52,6 @@ import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { Badge } from "./ui/badge";
-import { Button } from "./ui/button";
 
 // ─── マニュアルテキスト定義 ──────────────────────────────────────────────────
 
@@ -82,7 +80,15 @@ const MANUAL_MAP: Record<string, ManualInfo> = {
   "/community": {
     title: "スキル広場 › スキル一覧",
     description: "コミュニティやGitHubリポジトリから同期されたスキルを検索・閲覧・インストールできます。",
-    tips: ["検索バーでスキル名・説明・タグを横断検索できます", "「インストール」でマイスキルに追加できます", "「New」バッジは直近7日以内に追加されたスキルです"],
+    tips: [
+      "検索バーでスキル名・説明・タグを横断検索できます",
+      "「インストール」でマイスキルに追加できます",
+      "「New」バッジは直近7日以内に追加されたスキルです",
+      "【動的同期の仕組み】Git Tree API で1リクエストにより全ファイルのblob SHAを一括取得",
+      "SHAが変わったスキルのみ内容を再取得（最大10並列）し、DBをupsert",
+      "サーバー起動30秒後に初回同期を実行し、以降は設定した間隔（デフォルト6時間）で自動同期",
+      "タイトル＋更新日時が同一のスキルは重複とみなし「重複を削除」で一括削除可能",
+    ],
   },
   "/community/sources": {
     title: "スキル広場 › ソース管理",
@@ -291,43 +297,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     try { localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString()); } catch {}
   }, [sidebarWidth]);
 
-  if (loading) return <DashboardLayoutSkeleton />;
-
-  if (!user) {
-    // ローカル認証モードでは /login へ直接リダイレクト
-    if (isLocalAuthMode()) {
-      window.location.replace("/login");
-      return <DashboardLayoutSkeleton />;
-    }
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-background">
-        <div className="flex flex-col items-center gap-8 p-8 max-w-sm w-full">
-          <div className="flex flex-col items-center gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/30 flex items-center justify-center glow-primary">
-              <Zap className="w-8 h-8 text-primary" />
-            </div>
-            <div className="text-center">
-              <h1 className="text-2xl font-bold gradient-text">OpenSpace</h1>
-              <p className="text-sm text-muted-foreground mt-1">Skill Manager</p>
-            </div>
-          </div>
-          <div className="w-full space-y-3">
-            <p className="text-sm text-muted-foreground text-center">
-              スキルの進化を管理・追跡するプラットフォームです
-            </p>
-            <Button
-              onClick={() => { window.location.href = getLoginUrl(); }}
-              size="lg"
-              className="w-full glow-primary"
-            >
-              ログインして始める
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
+  // ロード中・未ログインどちらでもダッシュボードを表示する（認証不要モード）
+  // loading中はユーザーなしとして即レンダリング
   return (
     <SidebarProvider
       style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
@@ -449,14 +420,16 @@ function DashboardLayoutContent({
   children: React.ReactNode;
   setSidebarWidth: (w: number) => void;
 }) {
-  const { user, logout } = useAuth();
+  const { user: authUser, loading, logout } = useAuth();
+  // ロード中・未ログイン時はゲストユーザーとして扱う（ダッシュボードは即表示）
+  const user = authUser ?? { name: "ゲスト", email: "", role: "guest" as const, id: 0, openId: "" };
   const [location, setLocation] = useLocation();
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === "collapsed";
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
-  const isAdmin = user?.role === "admin";
+  const isAdmin = authUser?.role === "admin";
 
   // 各セクションの展開状態 (v4: Agent連携・ Claudeモニター廃止)
   const isSkillsActive = location.startsWith("/skills");
@@ -685,48 +658,68 @@ function DashboardLayoutContent({
 
           {/* Footer */}
           <SidebarFooter className="p-2 border-t border-sidebar-border">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button className="flex items-center gap-2.5 rounded-lg px-2 py-2 hover:bg-sidebar-accent transition-colors w-full text-left focus:outline-none">
-                  <Avatar className="h-7 w-7 border border-border shrink-0">
-                    <AvatarFallback className="text-xs font-semibold bg-primary/10 text-primary">
-                      {user?.name?.charAt(0).toUpperCase() ?? "U"}
-                    </AvatarFallback>
-                  </Avatar>
-                  {!isCollapsed && (
-                    <>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium truncate">{user?.name || "ユーザー"}</p>
-                        <p className="text-[10px] text-muted-foreground truncate">{user?.email || ""}</p>
-                      </div>
-                      <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />
-                    </>
-                  )}
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
-                <div className="px-2 py-1.5">
-                  <p className="text-sm font-medium">{user?.name}</p>
-                  <p className="text-xs text-muted-foreground">{user?.email}</p>
-                </div>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setLocation("/settings/integrations")} className="cursor-pointer">
-                  <Settings className="mr-2 h-4 w-4" />
-                  設定
-                </DropdownMenuItem>
-                {isAdmin && (
-                  <DropdownMenuItem onClick={() => setLocation("/admin/account")} className="cursor-pointer">
-                    <Shield className="mr-2 h-4 w-4" />
-                    管理者パネル
-                  </DropdownMenuItem>
+            {!authUser && !loading ? (
+              /* 未ログイン時はログインボタン */
+              <button
+                onClick={() => { window.location.href = "/login"; }}
+                className="flex items-center gap-2.5 rounded-lg px-2 py-2 hover:bg-sidebar-accent transition-colors w-full text-left focus:outline-none"
+              >
+                <Avatar className="h-7 w-7 border border-border shrink-0">
+                  <AvatarFallback className="text-xs font-semibold bg-muted text-muted-foreground">
+                    ?
+                  </AvatarFallback>
+                </Avatar>
+                {!isCollapsed && (
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium truncate text-primary">ログイン</p>
+                    <p className="text-[10px] text-muted-foreground truncate">クリックしてログイン</p>
+                  </div>
                 )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={logout} className="cursor-pointer text-destructive focus:text-destructive">
-                  <LogOut className="mr-2 h-4 w-4" />
-                  ログアウト
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+              </button>
+            ) : (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="flex items-center gap-2.5 rounded-lg px-2 py-2 hover:bg-sidebar-accent transition-colors w-full text-left focus:outline-none">
+                    <Avatar className="h-7 w-7 border border-border shrink-0">
+                      <AvatarFallback className="text-xs font-semibold bg-primary/10 text-primary">
+                        {user?.name?.charAt(0).toUpperCase() ?? "U"}
+                      </AvatarFallback>
+                    </Avatar>
+                    {!isCollapsed && (
+                      <>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium truncate">{user?.name || "ユーザー"}</p>
+                          <p className="text-[10px] text-muted-foreground truncate">{user?.email || ""}</p>
+                        </div>
+                        <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />
+                      </>
+                    )}
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52">
+                  <div className="px-2 py-1.5">
+                    <p className="text-sm font-medium">{user?.name}</p>
+                    <p className="text-xs text-muted-foreground">{user?.email}</p>
+                  </div>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setLocation("/settings/integrations")} className="cursor-pointer">
+                    <Settings className="mr-2 h-4 w-4" />
+                    設定
+                  </DropdownMenuItem>
+                  {isAdmin && (
+                    <DropdownMenuItem onClick={() => setLocation("/admin/account")} className="cursor-pointer">
+                      <Shield className="mr-2 h-4 w-4" />
+                      管理者パネル
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={logout} className="cursor-pointer text-destructive focus:text-destructive">
+                    <LogOut className="mr-2 h-4 w-4" />
+                    ログアウト
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </SidebarFooter>
         </Sidebar>
 
