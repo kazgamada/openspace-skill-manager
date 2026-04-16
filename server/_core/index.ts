@@ -3,6 +3,9 @@ import express from "express";
 import { createServer } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import net from "net";
+import cors from "cors";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { registerLocalAuthRoutes } from "./local-auth";
@@ -10,6 +13,8 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { syncAllSources } from "../github-sync";
+import { getCommunityAssets, getCommunityAssetById } from "../db";
+import { ENV } from "./env";
 
 // ─── Evolution Event Bus (in-process pub/sub) ─────────────────────────────────────────────
 const evolutionClients = new Set<WebSocket>();
@@ -45,6 +50,88 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 async function startServer() {
   const app = express();
   const server = createServer(app);
+
+  // ─── Security middleware ───────────────────────────────────────────────────
+  app.use(helmet({
+    contentSecurityPolicy: ENV.isProduction ? undefined : false,
+    crossOriginEmbedderPolicy: false,
+  }));
+
+  const allowedOrigins = ENV.allowedOrigins.length > 0
+    ? ENV.allowedOrigins
+    : ENV.isProduction ? [] : ["http://localhost:3000", "http://localhost:5173"];
+
+  app.use(cors({
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true); // same-origin / curl
+      if (allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+        return cb(null, true);
+      }
+      cb(new Error(`CORS: ${origin} not allowed`));
+    },
+    credentials: true,
+  }));
+
+  // Rate limiting
+  const globalLimiter = rateLimit({
+    windowMs: 60_000,
+    max: 200,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many requests, please try again later." },
+  });
+  const authLimiter = rateLimit({
+    windowMs: 60_000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many login attempts, please try again later." },
+  });
+  const aiLimiter = rateLimit({
+    windowMs: 60_000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "AI rate limit reached, please wait a moment." },
+  });
+
+  app.use("/api/auth", authLimiter);
+  app.use("/api/trpc/claude.mergeSkillsWithAI", aiLimiter);
+  app.use("/api/trpc/claude.recommend", aiLimiter);
+  app.use("/api/trpc/evolution", aiLimiter);
+  app.use("/api", globalLimiter);
+  app.use("/api/v1", cors({ origin: "*", credentials: false })); // public API: fully open
+
+  // ─── Public REST API v1 ───────────────────────────────────────────────────
+  // GET /api/v1/assets — list community assets (no auth required)
+  app.get("/api/v1/assets", async (req, res) => {
+    try {
+      const search = typeof req.query.search === "string" ? req.query.search : undefined;
+      const assetType = typeof req.query.type === "string" ? req.query.type : undefined;
+      const limit = Math.min(Number(req.query.limit) || 20, 100);
+      const offset = Number(req.query.offset) || 0;
+      const sortBy = (["crawlRank", "stars", "qualityScore", "cachedAt"] as const).includes(
+        req.query.sort as never
+      ) ? (req.query.sort as "crawlRank" | "stars" | "qualityScore" | "cachedAt") : "crawlRank";
+      const assets = await getCommunityAssets({ search, assetType, limit, offset, sortBy });
+      res.json({ data: assets, limit, offset });
+    } catch (e) {
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // GET /api/v1/assets/:id — get single asset detail
+  app.get("/api/v1/assets/:id", async (req, res) => {
+    try {
+      const asset = await getCommunityAssetById(req.params.id);
+      if (!asset) return res.status(404).json({ error: "Not found" });
+      return res.json(asset);
+    } catch (e) {
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ─── Body parser ──────────────────────────────────────────────────────────
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));

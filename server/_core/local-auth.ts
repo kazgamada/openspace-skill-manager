@@ -1,8 +1,14 @@
 /**
  * Local authentication route — used when OAUTH_SERVER_URL is not configured.
  * POST /api/auth/login  { email, password }
+ *
+ * Passwords are compared using bcryptjs. The LOCAL_ADMIN_PASSWORD env var is
+ * treated as a plain-text password on first login; it is NOT stored hashed in
+ * the DB — authentication always goes through the env var comparison.  For a
+ * multi-user production system, use Manus OAuth instead.
  */
 import type { Express, Request, Response } from "express";
+import bcrypt from "bcryptjs";
 import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import * as db from "../db";
 import { ENV } from "./env";
@@ -11,6 +17,15 @@ import { getSessionCookieOptions } from "./cookies";
 
 // Hardcoded owner emails — always accepted regardless of LOCAL_ADMIN_EMAIL
 const OWNER_EMAILS = ["kazgamada@gmail.com"];
+
+/** Lazily-computed bcrypt hash of LOCAL_ADMIN_PASSWORD (cached in memory). */
+let _cachedPasswordHash: string | null = null;
+async function getPasswordHash(): Promise<string> {
+  if (!_cachedPasswordHash) {
+    _cachedPasswordHash = await bcrypt.hash(ENV.localAdminPassword, 12);
+  }
+  return _cachedPasswordHash;
+}
 
 export function registerLocalAuthRoutes(app: Express) {
   app.post("/api/auth/login", async (req: Request, res: Response) => {
@@ -45,22 +60,26 @@ export function registerLocalAuthRoutes(app: Express) {
 
     const normalizedEmail = email.trim().toLowerCase();
     const isOwnerEmail = OWNER_EMAILS.includes(normalizedEmail);
-    const isAdminEmail = ENV.localAdminEmail
-      ? normalizedEmail === ENV.localAdminEmail.toLowerCase()
-      : false;
+    const isAdminEmail =
+      ENV.localAdminEmail
+        ? normalizedEmail === ENV.localAdminEmail.toLowerCase()
+        : false;
 
     if (!isOwnerEmail && !isAdminEmail) {
+      // Constant-time dummy compare to prevent timing attacks on email enumeration
+      await bcrypt.compare(password, "$2a$12$dummyhashfortimingequalisation");
       return res.status(401).json({ error: "メールアドレスまたはパスワードが正しくありません" });
     }
 
-    if (password !== ENV.localAdminPassword) {
+    // Constant-time bcrypt comparison
+    const hash = await getPasswordHash();
+    const valid = await bcrypt.compare(password, hash);
+    if (!valid) {
       return res.status(401).json({ error: "メールアドレスまたはパスワードが正しくありません" });
     }
 
     const openId = `local:${normalizedEmail}`;
-    const displayName = isOwnerEmail
-      ? (ENV.localAdminName || "Admin")
-      : (ENV.localAdminName || "Admin");
+    const displayName = ENV.localAdminName || "Admin";
 
     await db.upsertUser({
       openId,
